@@ -96,7 +96,7 @@ rental-medellin-ai-scraper/
 | [Maxibienes](https://www.maxibienes.com) | `MXB` | ✅ Done (870) | [mapping](reference/portals/maxibienes.md) |
 | [Arrendamientos SantaFe](https://arrendamientossantafe.com) | `ASF` | ✅ Done (1,128) | [mapping](reference/portals/arrendamientossantafe.md) |
 | [Alberto Alvarez](https://albertoalvarez.com) | `AAL` | ✅ Done (650) | [mapping](reference/portals/albertoalvarez.md) |
-| [Metrocasas](https://metrocasas.co) | `MTC` | ⚠️ Partial (57) | [mapping](reference/portals/metrocasas.md) |
+| [Metrocasas](https://metrocasas.co) | `MTC` | ✅ Done (71) | [mapping](reference/portals/metrocasas.md) |
 | [Santillana](https://santillanasas.com) | `STL` | ✅ Done (72) | [mapping](reference/portals/santillana.md) |
 | [Coninsa](https://www.coninsa.co) | `CON` | 🔲 Blocked (JS SPA) | [mapping](reference/portals/coninsa.md) |
 

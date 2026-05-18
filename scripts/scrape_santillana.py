@@ -3,6 +3,7 @@
 import re, json, asyncio, sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scrapling import AsyncFetcher
+from scripts.adaptive_extractor import extract_card as adaptive_extract
 
 PREFIX, PORTAL = "STL", "santillana"
 BASE = "https://santillanasas.com/search"
@@ -34,12 +35,10 @@ async def main():
             code_m = re.search(r'/(\d+)', url)
             code = code_m.group(1) if code_m else ""
             text = c.get_all_text()
-            tipo_m = re.search(r'Tipo:\s*(\w+)', text)
-            tipo = tipo_m.group(1).lower() if tipo_m else ""
-            price_m = re.search(r'\$([\d.]+)', text)
-            precio = int(price_m.group(1).replace('.', '')) if price_m else 0
+            # Use adaptive extractor for tipo and precio — no portal-specific regex
+            extracted = adaptive_extract(c, PORTAL, PREFIX)
             page_results.append({"id": f"{PREFIX}-{code}" if code else "", "portal": PORTAL,
-                "tipo": tipo, "precio": precio, "area": 0, "habitaciones": 0, "banos": 0,
+                "tipo": extracted["tipo"], "precio": extracted["precio"], "area": 0, "habitaciones": 0, "banos": 0,
                 "parqueaderos": 0, "estrato": 0, "barrio": "", "url": url})
         all_cards.extend(page_results)
         print(f"  Page {page}: {len(page_results)}")

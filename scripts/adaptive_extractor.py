@@ -145,32 +145,35 @@ def extract_precio(card) -> int:
 
 
 def extract_area(card) -> int:
-    """Extract area — unit pattern m², keyword proximity."""
-    html = _html(card)
+    """Extract area — Scrapling-based: find elements near 'Área' or 'area' labels + unit pattern."""
     text = _text(card)
+    html = _html(card)
 
-    # Strategy 1: Pattern number + m²/m2/mt2 (handles <sup>2</sup>)
-    m = re.search(r"(\d+)\s*m[²2]", html, re.IGNORECASE)
+    # Strategy 1: Find element containing 'Área' or 'area' label, get sibling number
+    for label in ['Área', 'Area', 'área', 'area']:
+        # Find any element whose all-text contains the label exactly
+        for el in card.find_all("*"):
+            t = _text(el).strip()
+            if label in t and len(t) < 30:
+                # Check siblings or parent for number + m2
+                parent = el.parent if hasattr(el, 'parent') else None
+                if parent:
+                    ptext = _text(parent)
+                    m = re.search(r'(\d+)\s*m\s*2', ptext, re.IGNORECASE)
+                    if m:
+                        return int(m.group(1))
+                    m = re.search(r'(\d+)\s*m[²2]', ptext, re.IGNORECASE)
+                    if m:
+                        return int(m.group(1))
+
+    # Strategy 2: Direct unit pattern in text  
+    m = re.search(r'(\d+)\s*m[²2]', text, re.IGNORECASE)
     if m:
         return int(m.group(1))
-    m = re.search(r"(\d+)\s*m\s*<sup>2</sup>", html, re.IGNORECASE)
+    m = re.search(r'(\d+)\s*m\s*2', text, re.IGNORECASE)
     if m:
         return int(m.group(1))
-
-    m = re.search(r"(\d+)m[²2]", text, re.IGNORECASE)
-    if m:
-        return int(m.group(1))
-
-    # Strategy 2: Element with class 'area'
-    els = card.find_all("[class*='area']")
-    for el in els:
-        el_text = _text(el)
-        num = re.search(r"(\d+)", el_text)
-        if num:
-            return int(num.group(1))
-
-    # Strategy 3: 'metros' keyword
-    m = re.search(r"(\d+)\s*metros", text, re.IGNORECASE)
+    m = re.search(r'(\d+)\s*m\s*<sup>2</sup>', html, re.IGNORECASE)
     if m:
         return int(m.group(1))
 
@@ -236,16 +239,26 @@ def extract_tipo(card) -> str:
 
 
 def extract_barrio(card) -> str:
-    """Extract neighborhood — label, location icon."""
+    """Extract neighborhood — label, location icon, or parsed from title."""
     text = _text(card)
     html = _html(card)
+
+    # Strategy 0: Parse barrio from heading "TIPO en BARRIO" pattern
+    for tag in ["h2", "h3", "h4"]:
+        el = card.find(tag)
+        if el:
+            htext = _text(el).strip()
+            m = re.search(r'(?:Apartaestudio|Apartamento|Casa|Oficina|Local|Bodega|Finca|Lote)\s+(?:en\s+|es\s+)?(.+)', htext, re.IGNORECASE)
+            if m:
+                barrio = m.group(1).strip()
+                if barrio and len(barrio) < 80:
+                    return barrio
 
     # Strategy 1: Label patterns
     for label in ["Ubicación:", "Ubicacion:", "Ubicado en:", "Barrio:", "Zona:", "Sector:", "Location:", "Neighborhood:"]:
         m = re.search(rf"{re.escape(label)}\s*(.+?)(?:\n|$)", text, re.IGNORECASE)
         if m:
             val = m.group(1).strip()
-            # Exclude things that aren't neighborhoods
             if val and not any(kw in val.lower() for kw in ["$", "cop", "tipo", "estrato"]):
                 return val
 
