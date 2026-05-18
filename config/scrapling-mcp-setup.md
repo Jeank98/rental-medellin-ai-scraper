@@ -4,44 +4,57 @@ How to install and configure Scrapling MCP for OpenCode.
 
 ## Installation
 
+### Docker (recommended — no system deps)
+
+```bash
+docker pull pyd4vinci/scrapling
+```
+
 ### macOS (Homebrew)
+
 ```bash
 brew install scrapling
 ```
 
 ### pip (any platform)
+
 ```bash
-pip install scrapling
+pip install "scrapling[ai]"
+scrapling install
 ```
 
 ## OpenCode MCP Configuration
 
 Add the following block to `~/.config/opencode/opencode.json` under the `"mcp"` key:
 
+### Docker (recommended)
+
 ```json
 {
   "mcp": {
     "scrapling": {
-      "command": ["/opt/homebrew/bin/scrapling", "mcp"],
-      "enabled": true,
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "pyd4vinci/scrapling", "mcp"],
       "type": "local"
     }
   }
 }
 ```
 
-If installed via pip, use:
+### Native (brew/pip)
+
 ```json
 {
   "mcp": {
     "scrapling": {
-      "command": ["scrapling", "mcp"],
-      "enabled": true,
+      "command": ["/path/to/scrapling", "mcp"],
       "type": "local"
     }
   }
 }
 ```
+
+Run `which scrapling` to find the executable path.
 
 ## Available Tools
 
@@ -54,7 +67,10 @@ Once configured, the following MCP tools become available:
 | `scrapling_fetch` | Chromium-based dynamic content fetch |
 | `scrapling_bulk_fetch` | Parallel multi-page browser fetch |
 | `scrapling_stealthy_fetch` | Anti-bot bypass (Cloudflare, Turnstile) |
-| `scrapling_screenshot` | Capture page screenshots |
+| `scrapling_screenshot` | Capture page screenshots (returns image the model can see) |
+| `scrapling_open_session` | Create persistent browser session |
+| `scrapling_close_session` | Close a browser session |
+| `scrapling_list_sessions` | List active browser sessions |
 
 ## Key Parameters
 
