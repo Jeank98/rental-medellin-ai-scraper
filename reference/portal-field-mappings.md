@@ -10,5 +10,5 @@ Discovered field-to-column mappings for each scraped portal. Each portal has its
 | Arrendamientos SantaFe | `ASF` | [arrendamientossantafe.md](portals/arrendamientossantafe.md) | ✅ Done | 1,128 |
 | Alberto Alvarez | `AAL` | [albertoalvarez.md](portals/albertoalvarez.md) | ✅ Done | 650 |
 | Metrocasas | `MTC` | [metrocasas.md](portals/metrocasas.md) | ⚠️ Partial | 52 |
-| Santillana | `STL` | — | 🔲 Discovery in progress | — |
-| Coninsa | `CON` | — | 🔲 Discovery in progress | — |
+| Santillana | `STL` | [santillana.md](portals/santillana.md) | ✅ Done | 72 |
+| Coninsa | `CON` | [coninsa.md](portals/coninsa.md) | 🔲 Blocked (JS SPA) | — |
