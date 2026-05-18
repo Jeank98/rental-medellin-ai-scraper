@@ -40,3 +40,19 @@ Scrape rental property listings from any Colombian real estate portal, extract s
 ### Tool requirements
 - Scrapling MCP must be configured in opencode.json
 - The `real-estate-scraper` skill must be installed in `~/.config/opencode/skills/`
+
+### ⛔ NO REGEX RULE (mandatory)
+
+**Zero static pattern matching.** This project uses Scrapling MCP tools (`scrapling_get`, `scrapling_screenshot`, `scrapling_bulk_get`) for ALL field extraction. The agent reads the rendered text output from Scrapling and uses its own reasoning to identify and extract fields — guided by `docs/variable-detection.md`.
+
+**Never use:**
+- `re.search`, `re.match`, `re.findall`, `re.compile` for field extraction
+- Hardcoded CSS selectors (`.alcobas`, `.garaje`) in Python code
+- Per-portal scraper scripts
+- `adaptive_extractor.py` or any regex-based extraction
+
+**Always use:**
+- `scrapling_get` to fetch pages and see their content
+- `scrapling_screenshot` for visually identifying icon-only fields
+- `scrapling_bulk_get` for parallel multi-page extraction
+- The agent's own reasoning to map text → 11 columns per `docs/variable-detection.md`

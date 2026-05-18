@@ -1,6 +1,6 @@
 ---
 name: real-estate-scraper
-description: Scrape real estate rental listings from any portal. Uses Scrapling MCP tools directly — the AI agent discovers page structure, maps fields visually with screenshots, and extracts listings in conversation. No hardcoded selectors or scripts.
+description: Scrape real estate rental listings from any portal using Scrapling MCP tools exclusively. The AI agent fetches pages, reads content, identifies fields visually, and extracts listings — zero regex, zero scripts, zero hardcoded selectors.
 license: MIT
 compatibility: opencode
 metadata:
@@ -10,37 +10,39 @@ metadata:
 
 ## What I Do
 
-Scrape real estate rental listings from any portal URL using Scrapling MCP tools directly in conversation. I fetch pages, see the content, reason about field mappings, and extract data — no hardcoded selectors, no per-portal scripts. When text labels are absent (icon-only fields), I use `scrapling_screenshot` to visually identify what each icon means.
+Scrape rental listings from any real estate portal using **only Scrapling MCP tools**. No Python scripts, no regex, no CSS selectors — the agent fetches, sees, reasons, and extracts. Screenshots handle icon-only fields. Bulk tools handle pagination.
 
-Output columns (always in this order):
+Output columns (always 11, in this order):
 
 | # | Column | Type | Description |
 |---|--------|------|-------------|
-| 1 | `id` | str | Composite key: `{PORTAL_PREFIX}-{INTERNAL_CODE}` (e.g. `MXB-69007`). Globally unique. |
-| 2 | `portal` | str | Portal identifier (domain without TLD, e.g. `maxibienes`, `fincaraiz`) |
-| 3 | `tipo` | str | Property type, normalized: `apartamento`, `casa`, `apartaestudio`, `local`, `oficina`, `bodega`, `lote`, `finca` |
-| 4 | `precio` | int | Rental price in local currency (digits only, no dots/commas/symbols) |
-| 5 | `area` | int | Area in m² (digits only) |
-| 6 | `habitaciones` | int | Number of bedrooms |
-| 7 | `banos` | int | Number of bathrooms |
-| 8 | `parqueaderos` | int | Number of parking spots |
-| 9 | `estrato` | int | Socioeconomic level (1-6, Colombia-specific; 0 if unavailable) |
-| 10 | `barrio` | str | Neighborhood name |
-| 11 | `url` | str | Full URL to the property detail page |
+| 1 | `id` | str | `{PORTAL_PREFIX}-{CODE}` (e.g. `MXB-69007`) |
+| 2 | `portal` | str | Domain without TLD (e.g. `maxibienes`) |
+| 3 | `tipo` | str | `apartamento`, `casa`, `apartaestudio`, `local`, `oficina`, `bodega`, `lote`, `finca` |
+| 4 | `precio` | int | Rental price, digits only |
+| 5 | `area` | int | m², digits only |
+| 6 | `habitaciones` | int | Bedrooms |
+| 7 | `banos` | int | Bathrooms |
+| 8 | `parqueaderos` | int | Parking spots |
+| 9 | `estrato` | int | 1-6 (Colombia), 0 if unavailable |
+| 10 | `barrio` | str | Neighborhood |
+| 11 | `url` | str | Full detail page URL |
 
 ---
 
 ## Prerequisites
 
-- **Scrapling MCP** configured in opencode.json — provides `scrapling_get`, `scrapling_bulk_get`, `scrapling_screenshot`, etc.
-- **Scrapling MCP must be loaded in the current session** — verify by checking available tools for `scrapling_*`
-- A search results URL from a real estate portal
+- **Scrapling MCP** configured and loaded — tools: `scrapling_get`, `scrapling_bulk_get`, `scrapling_fetch`, `scrapling_screenshot`, `scrapling_open_session`
 - Reference docs (read as needed):
-  - `docs/variable-detection.md` — field detection strategies (read during Phase 1)
-  - `docs/columns-spec.md` — exact column types and normalization rules
-  - `docs/scraping-rules.md` — pagination discovery, validation rules
-  - `docs/decision-tree.md` — what to do when fields are missing or ambiguous
-  - `reference/portals/` — previously discovered mappings (check first!)
+  - `docs/variable-detection.md` — field detection strategies
+  - `docs/columns-spec.md` — types and normalization
+  - `docs/scraping-rules.md` — pagination discovery, validation
+  - `docs/decision-tree.md` — missing field logic
+  - `reference/portals/` — per-portal mappings (check first!)
+
+## ⛔ NO REGEX RULE
+
+**Never use regex, Python scripts, or hardcoded selectors for field extraction.** The agent uses Scrapling MCP tools to see page content, then applies its own reasoning guided by `docs/variable-detection.md`. Regex is only acceptable for pagination discovery (finding page numbers in HTML source) — never for extracting listing field values.
 
 ---
 
@@ -48,13 +50,9 @@ Output columns (always in this order):
 
 ### Phase 1: Discovery (single page)
 
-**Goal**: Understand the page structure using the AI's own eyes. Do NOT skip to bulk scrape yet.
-
-**Always check `reference/portals/` first** — if this portal was scraped before, read its individual file (e.g., `reference/portals/maxibienes.md`) to get existing mappings as a starting point. Then verify they still hold.
+**Check `reference/portals/` first** — if scraped before, verify existing mappings.
 
 #### Step 1.1 — Fetch page 1 as text
-
-Use `scrapling_get` to get an overview:
 
 ```
 scrapling_get(
@@ -66,168 +64,123 @@ scrapling_get(
 )
 ```
 
-This gives a clean text view of the page. Identify:
-- How many listings appear (count repeating patterns)
-- What fields are visible in text form (prices, areas, neighborhoods)
-- What fields are missing from text (likely icon-only or visual)
+Read the output. Identify: listing count, visible fields, missing fields.
 
-If the portal redirects or requires JavaScript, detect and switch to `scrapling_fetch`.
+#### Step 1.2 — Portal identity
 
-#### Step 1.2 — Determine portal identity
+- **PORTAL**: domain without TLD. `www.maxibienes.com` → `maxibienes`
+- **PREFIX**: 2-4 uppercase letters. Maxibienes → `MXB`
 
-From the URL:
-- **`PORTAL`**: domain without TLD. `www.maxibienes.com` → `maxibienes`
-- **`PREFIX`**: 2-4 uppercase letters. Maxibienes → `MXB`, ArrendamientosSantaFe → `ASF`
+#### Step 1.3 — Find listing cards
 
-#### Step 1.3 — Find listing cards with CSS selector
-
-Fetch page 1 again with HTML extraction, trying different selectors until you find listing cards:
+Use `css_selector` to narrow output to just listing cards:
 
 ```
 scrapling_get(
   url: "{USER_URL}",
-  stealthy_headers: true,
-  timeout: 30,
-  extraction_type: "html",
-  css_selector: ".grid-style1 .item"   // try common patterns
+  extraction_type: "text",
+  css_selector: ".grid-style1 .item"
 )
 ```
 
-Common selectors to try: `[class*="item"]`, `[class*="card"]`, `[class*="property"]`, `article`, `.listing`. You're looking for a selector that returns exactly N elements where N matches the listing count from Step 1.1.
+Try `[class*="item"]`, `[class*="card"]`, `[class*="property"]`, `article`. Count = per-page listings.
 
-#### Step 1.4 — Map fields (text-based first)
+#### Step 1.4 — Map fields (text-based)
 
-For each target column, apply the detection strategies from `docs/variable-detection.md` on the text output from Step 1.1:
+For each of the 11 columns, read the text output and apply detection strategies from `docs/variable-detection.md`:
 
-- **`tipo`**: heading text, "Tipo:" label, URL path segment. Normalize per `columns-spec.md`.
-- **`precio`**: currency symbol + number, "Arriendo" keyword. Handle ARRIENDO/VENTA dual prices (split `/`, take first).
-- **`area`**: `m²`, `m2`, `mt2`, `metros` pattern.
-- **`habitaciones`**: bed icon keywords, "alcoba", "habitación" labels.
-- **`banos`**: bath icon keywords, "baño", "bath" labels. Often absent → 0.
-- **`parqueaderos`**: car/garage icon keywords, "garaje", "parqueadero" labels.
-- **`estrato`**: "Estrato:" + number 1-6. Colombian portals only. Absent → 0.
-- **`barrio`**: "Ubicación:", "Barrio:", "Zona:", "Sector:" labels.
-- **`url`**: anchor wrapping the card/image. Make absolute.
-- **`id`**: "REF:", "Código:", "Code:", URL path. Compose `{PREFIX}-{CODE}`.
+- **tipo**: heading text, "Tipo:" label. Normalize to lowercase.
+- **precio**: `$` + number. Handle ARRIENDO/VENTA (split `/`, take first). Strip formatting → int.
+- **area**: `m²`, `m2`, `metros` + number. Extract int.
+- **habitaciones**: bed icon keywords, "alcoba", "habitación" + number.
+- **banos**: bath icon keywords, "baño", "bath" + number. Absent → 0.
+- **parqueaderos**: car/garage keywords, "garaje", "parqueadero" + number. Absent → 0.
+- **estrato**: "Estrato: N" where N=1-6. Absent → 0.
+- **barrio**: "Ubicación:", "Barrio:", "Zona:", "Sector:" labels. Or parsed from title "TIPO en BARRIO".
+- **url**: `<a href>` wrapping the card. Make absolute.
+- **id**: "REF:", "Código:", "Code:" + value. Or URL path extraction. Compose `{PREFIX}-{CODE}`.
 
-**For text-only fields that are unclear or ambiguous, STOP and use Step 1.4b.**
+#### Step 1.4b — Visual resolution (icons without labels)
 
-#### Step 1.4b — Visual field resolution with screenshots
+For fields missing from text (icons only), use:
 
-When a field cannot be determined from text alone (icons without labels, unusual layouts, ambiguous positions), use `scrapling_screenshot` to see the actual listing card:
+```
+scrapling_open_session(type: "dynamic")
+scrapling_fetch(url, session_id=..., css_selector=".listing-card")
+scrapling_screenshot(selector=".listing-card", session_id=...)
+```
 
-1. Open a browser session: `scrapling_open_session(type: "dynamic")`
-2. Fetch page 1: `scrapling_fetch` with `session_id` and the card CSS selector
-3. Take a screenshot: `scrapling_screenshot(selector: "{CARD_SELECTOR}")`
-
-The screenshot returns an actual image the model can see — not a base64 blob. **Look at the icons visually**:
+The screenshot returns an image the agent can SEE — identify icons visually:
 - 🛏️ + number = habitaciones
-- 🚿/🛁 + number = banos
+- 🚿 + number = banos
 - 🚗 + number = parqueaderos
 - 📍 + text = barrio
 
-Map each icon to its column by visual position and icon type. Record your findings.
+Close session: `scrapling_close_session(session_id)`
 
-4. Close session when done: `scrapling_close_session(session_id)`
+#### Step 1.5 — Pagination
 
-#### Step 1.5 — Discover pagination
+Find total pages:
+- Text: "Mostrando X de Y", "Página X de Y"
+- JS vars: `var totalInmuebles = N`
+- Large page probe: `?page=999` → observe redirect or stale content
+- Binary search if no explicit count
 
-Find the total number of listings and pages:
-
-1. Count listings on page 1 from Step 1.3
-2. Look for pagination clues:
-   - Text: "Page X of N", "Página X de N"
-   - JavaScript variables in page source: `var totalInmuebles = N; var totalpagina = N;`
-   - Pagination links with last-page number
-3. **Large-page probe**: request `?page=999` and observe:
-   - The URL redirect → actual last page
-   - Whether stale/placeholder listings appear past the end (compare listing IDs)
-4. Calculate: `total_pages = ceil(total_listings / listings_per_page)`
-
-**Halt and report your findings to the user** before proceeding: portal, prefix, card selector, field mappings (with confidence levels), total pages, any fields confirmed as missing.
+**Halt and report** before bulk scrape.
 
 ---
 
 ### Phase 2: Bulk Scrape
 
-#### Step 2.1 — Generate all page URLs
+#### Step 2.1 — Generate URLs
 
-Build the full URL for every page (1 to total_pages) using the pattern from Step 1.5.
+Build all page URLs using the pattern discovered in Step 1.5.
 
-#### Step 2.2 — Fetch all pages with `scrapling_bulk_get`
-
-Use `scrapling_bulk_get` to fetch all pages in a single parallel call:
+#### Step 2.2 — Fetch all pages
 
 ```
 scrapling_bulk_get(
-  urls: ["{url_page_1}", "{url_page_2}", ...],
+  urls: [all_page_urls],
   stealthy_headers: true,
   timeout: 60,
   extraction_type: "text",
-  css_selector: "{LISTING_CARD_SELECTOR}"
+  css_selector: "{CARD_SELECTOR}"
 )
 ```
 
-If the page requires JavaScript, use `scrapling_bulk_fetch` instead.
-If the portal blocks bulk requests, fall back to sequential `scrapling_get` calls.
+#### Step 2.3 — Extract
 
-#### Step 2.3 — Extract and type
-
-**The AI processes the returned content directly in conversation.** For each listing card returned by scrapling:
-
-- Extract values using the field mappings discovered in Phase 1
-- **String fields**: trim whitespace, normalize tipo to lowercase
-- **Integer fields**: strip non-digit characters, convert to int. Empty → 0.
-- **`id`**: compose `{PREFIX}-{CODE}`. If no code found, generate from row index.
-- **`portal`**: set to the portal name from Step 1.2.
-
-Use the strategies from `docs/variable-detection.md` to handle edge cases (dual prices, missing fields, icon-based values).
+**The agent processes the returned text directly.** For each listing:
+- Read the text output (flat listing content)
+- Apply field mappings from Phase 1
+- String fields: trim, normalize tipo to lowercase
+- Integer fields: strip non-digits → int. Empty → 0.
+- **id**: compose `{PREFIX}-{CODE}`
 
 #### Step 2.4 — Validate
 
-Check the extracted data:
 - No duplicate `id` values
-- `precio` > 0 for all rows (flag zeros)
-- `area` > 0 for most rows
-- `habitaciones`, `banos` in reasonable range (0-20)
-- `parqueaderos` in reasonable range (0-10, flag outliers)
-- `estrato` in 0-6 (flag > 6 as source data error)
-- All `url` values are absolute and non-empty
+- `precio` > 0 (flag zeros)
+- `habitaciones`, `banos` in 0-20
+- `parqueaderos` in 0-10 (flag outliers)
+- `estrato` in 0-6 (flag > 6)
+- All URLs absolute and non-empty
 
-**Report anomalies to the user** rather than silently fixing.
+**Report anomalies** — don't silently fix.
 
 ---
 
-### Phase 3: Output — CSV or Database
+### Phase 3: Output
 
-**Before writing output, ask the user where to save**: CSV file (portable, no setup) or PostgreSQL database.
+Ask: CSV or PostgreSQL?
 
-#### Option A: CSV (default)
+**CSV**: Write `results/{portal}_arriendos_{ciudad}.csv` (UTF-8, comma, 11 columns).
 
-Ensure `results/` directory exists, then write to `results/{portal}_arriendos_{ciudad}.csv`:
-
-```
-id,portal,tipo,precio,area,habitaciones,banos,parqueaderos,estrato,barrio,url
-```
-
-- Encoding: UTF-8, comma delimiter
-- No quotes unless value contains comma or newline
-- Directory `results/` is gitignored
-
-#### Option B: PostgreSQL database
-
-If the user has configured `DATABASE_URL` in `.env`:
-
-1. Write the scraped data to a temporary JSON file
-2. Run: `uv run python scripts/insert_listings.py <json_file> <ciudad>`
-
-The table uses `ON CONFLICT (id) DO UPDATE` and auto-manages `active`/`inactive` status. Re-scraping marks unseen listings as inactive.
+**PostgreSQL**: Write listings as JSON → `uv run python scripts/insert_listings.py <json> <ciudad>`.
 
 ---
 
 ### Phase 4: Report
-
-Print a summary table:
 
 | Metric | Value |
 |---|---|
@@ -235,47 +188,19 @@ Print a summary table:
 | City | {ciudad} |
 | Total listings | {N} |
 | Pages scraped | {M} |
-| Property types | {unique tipos} |
+| Property types | {counts} |
 | Unique neighborhoods | {count} |
 | Price range | {min} - {max} |
-| Anomalies | {count and description} |
-| Output | CSV path or DB row count |
+| Anomalies | {description} |
 
-Show the first 3 and last 3 rows as inline samples.
+Show first 3 and last 3 rows.
 
 ---
 
-## Edge Cases and Best Practices
+## Edge Cases
 
-### Dynamic content
-- If listings load via AJAX/JavaScript, use `scrapling_fetch` (opens Chromium)
-- Check the browser console for API endpoints — calling the API directly is faster
-- For infinite scroll, find the API endpoint and paginate through it
-
-### Anti-bot protection
-- Always use `stealthy_headers: true` with `scrapling_get`
-- For Cloudflare/Turnstile, use `scrapling_stealthy_fetch`
-- Add delays between requests if the server returns 429
-
-### Icon-only fields (visual detection)
-- When text extraction shows numbers but no labels, use `scrapling_screenshot` to see the icons
-- The model can visually identify: bed icon → habitaciones, bath/shower → banos, car → parqueaderos
-- Record discovered icon mappings in `reference/portals/{portal_name}.md` for future scrapes
-
-### Duplicate properties
-- The composite `id` de-duplicates naturally
-- Flag duplicates in the report but keep both rows — the user decides
-
-### Missing fields
-- Set numeric fields to 0 if missing after exhaustive search (including screenshot inspection)
-- Set string fields to empty string
-- Never use placeholder values (e.g. "N/A", -1)
-
-### Multi-currency
-- Prefer COP for Colombian portals
-- Note non-COP currencies in the report
-
-### Scalability
-- `id` column is the merge key across portals
-- `portal` column enables filtering by source
-- Re-scraping with DB option auto-manages active/inactive status
+- **JS-rendered pages**: Scrapling MCP's `get` already renders JS — no `fetch` needed unless Cloudflare
+- **Anti-bot**: Use `stealthy_headers: true`. For Cloudflare, `scrapling_stealthy_fetch`
+- **Infinite scroll**: `scrapling_open_session` + `scrapling_fetch` + click "load more"
+- **Two-phase portals**: Cards missing fields → collect detail URLs → `scrapling_bulk_get` detail pages
+- **Hidden JSON**: Some portals have JSON in `<textarea>` — visible in text output, parse inline
