@@ -1,6 +1,6 @@
 # rental-medellin-ai-scraper
 
-AI-agent-driven knowledge base for scraping real estate rental listings from Colombian portals. The agent discovers page structure dynamically — no hardcoded selectors, no runtime code, no scraped data stored here.
+AI-agent-driven knowledge base for scraping real estate rental listings from Colombian portals. The agent discovers page structure dynamically — no hardcoded selectors. Output as CSV or to a PostgreSQL database.
 
 ## Quick Start
 
@@ -31,14 +31,30 @@ In OpenCode, say:
 ```
 Scrape rental listings from https://example.com/propiedades/?bussines_type=Arrendar
 ```
-The agent loads `real-estate-scraper` skill and follows the 4-phase workflow.
+The agent loads `real-estate-scraper` skill and follows the 4-phase workflow. By default, results are saved as CSV. If you want them in PostgreSQL, set up the database first (see below).
+
+### 4. Database setup (optional)
+If you want to save listings to PostgreSQL instead of CSV:
+```bash
+cp .env.example .env          # then edit .env with your DATABASE_URL
+uv run python scripts/setup_db.py
+uv run python scripts/test_save.py
+```
+The database is provider-agnostic — any PostgreSQL connection string works (Neon, Supabase, local, etc.).
 
 ## Project Structure
 ```
 rental-medellin-ai-scraper/
 ├── AGENTS.md                        # Agent instructions
 ├── README.md                        # This file
-├── .gitignore                       # No CSVs, no data
+├── .gitignore
+├── .env.example                     # DB connection string template
+├── db/
+│   └── __init__.py                  # PostgreSQL connection, schema, ops
+├── scripts/
+│   ├── setup_db.py                  # Create listings table
+│   ├── test_save.py                 # Test insert and read-back
+│   └── insert_listings.py           # Bulk insert from JSON
 ├── skills/
 │   └── real-estate-scraper/
 │       └── SKILL.md                 # Page-agnostic scraping skill
@@ -53,7 +69,7 @@ rental-medellin-ai-scraper/
     └── portal-field-mappings.md      # Discovered field mappings per portal
 ```
 
-## CSV Output Columns
+## Output Columns
 | # | Column | Type | Description |
 |---|--------|------|-------------|
 | 1 | `id` | str | Composite key `{PREFIX}-{CODE}` |

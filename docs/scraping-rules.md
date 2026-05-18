@@ -31,7 +31,11 @@ After mapping fields on one card, verify the same mapping works on at least 3 di
 - Look for numbered pagination links
 - Look for "Next"/"Siguiente" links
 - Determine URL pattern: query param (`?page=N`), path segment (`/pagina/N`), or AJAX
-- To find total pages: request a very large page number (e.g., `?page=999`) and observe the last visible page number in the pagination element
+- **JS variable detection**: check `<script>` tags for variables like `var totalInmuebles = 870; var totalpagina = 12;` — compute `ceil(total / per_page)`
+- **Large page probe**: request a very large page number (e.g., `?page=999`) and observe:
+  - The last valid page number in pagination elements
+  - Whether the site serves stale/placeholder listings past the end (detect by comparing listing codes across pages)
+- **Binary search**: when no pagination info is available, binary-search to find the last valid page by checking if pages return fresh listing codes vs. stale duplicates
 
 ## Phase 2: Bulk Scrape
 
@@ -69,26 +73,28 @@ If a value seems wrong (parking = 2611), include it as-is but flag it in the rep
 ### 3.4 Deduplicate by `id`
 The composite `id` field prevents duplicates across pages and portals. If a portal lists the same property on multiple pages, the second occurrence will have the same `id` and should be flagged.
 
-## Phase 4: CSV Output
+## Phase 4: Output — CSV or Database
 
-### 4.1 Column order is fixed
+The agent must ask the user where to save before writing output.
+
+### 4.1 Column order is fixed (both outputs)
 Always: `id, portal, tipo, precio, area, habitaciones, banos, parqueaderos, estrato, barrio, url`
 
-### 4.2 Encoding and format
-- UTF-8 encoding
-- Comma delimiter
+### 4.2 Option A: CSV (default, portable)
+- Write to `results/{portal}_arriendos_{ciudad}.csv`
+- Encoding: UTF-8, comma delimiter, no BOM
 - No quotes unless value contains comma or newline
-- No BOM
+- Directory `results/` is gitignored (CSVs never committed)
 
-### 4.3 File naming
-`{portal}_arriendos_{ciudad}.csv`
-
-Examples:
-- `maxibienes_arriendos_medellin.csv`
-- `arrendamientossantafe_arriendos_medellin.csv`
+### 4.3 Option B: PostgreSQL database
+- Requires `DATABASE_URL` in `.env` (PostgreSQL connection string; provider-agnostic)
+- One-time setup: `uv run python scripts/setup_db.py`
+- Insert data: write listings to a JSON file, then run `uv run python scripts/insert_listings.py <json_file> <ciudad>`
+- Uses `ON CONFLICT (id) DO UPDATE` — re-scraping refreshes rows, no duplicates
+- JSON format: list of objects with keys matching column names (minus `ciudad`, added by script)
 
 ### 4.4 Always produce a report
-After CSV generation, report:
+After output, report:
 - Total listings scraped
 - Total pages
 - Property types found
@@ -96,3 +102,4 @@ After CSV generation, report:
 - Price range (min-max)
 - Anomalies detected (count and description)
 - Fields that were missing/unavailable
+- Output location (CSV path or DB row count)

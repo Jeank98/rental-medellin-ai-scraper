@@ -1,6 +1,6 @@
 # Column Specification
 
-Every CSV output by the scraper must have exactly these 11 columns in this order. All numeric fields are plain integers (no formatting, no symbols, no decimals). Missing fields are `0` for numeric, empty string for text.
+Every listing record (CSV row or database row) must have exactly these 11 columns in this order. All numeric fields are plain integers (no formatting, no symbols, no decimals). Missing fields are `0` for numeric, empty string for text.
 
 ## Column definitions
 
@@ -116,7 +116,7 @@ Keywords: `barrio`, `zona`, `sector`, `neighborhood`, `ubicación`, `location`, 
 
 ## Type validation checklist
 
-Before writing CSV, verify:
+Before writing output (CSV or DB), verify:
 - [ ] `precio`, `area`, `habitaciones`, `banos`, `parqueaderos`, `estrato` are all integers
 - [ ] No `$`, `.`, `,`, spaces in numeric fields
 - [ ] No `N/A`, `null`, `None`, `-1` as placeholder values
