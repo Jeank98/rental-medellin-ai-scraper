@@ -65,8 +65,14 @@ rental-medellin-ai-scraper/
 │   └── decision-tree.md             # Missing-field decision logic
 ├── config/
 │   └── scrapling-mcp-setup.md       # Scrapling MCP setup guide
-└── reference/
-    └── portal-field-mappings.md      # Discovered field mappings per portal
+├── reference/
+│   ├── portal-field-mappings.md      # Index of all portal mappings
+│   └── portals/                      # Individual portal files
+│       ├── _TEMPLATE.md
+│       ├── maxibienes.md
+│       ├── arrendamientossantafe.md
+│       ├── albertoalvarez.md
+│       └── metrocasas.md
 ```
 
 ## Output Columns
@@ -87,8 +93,10 @@ rental-medellin-ai-scraper/
 ## Portals Scraped
 | Portal | Prefix | Status | Reference |
 |--------|--------|--------|-----------|
-| [Maxibienes](https://www.maxibienes.com) | `MXB` | ✅ Done | See `reference/portal-field-mappings.md` |
-| [Arrendamientos SantaFe](https://arrendamientossantafe.com) | `ASF` | ✅ Done (94 pages, 1,128 listings) | Field mapping done, see `reference/portal-field-mappings.md` |
+| [Maxibienes](https://www.maxibienes.com) | `MXB` | ✅ Done (870) | [mapping](reference/portals/maxibienes.md) |
+| [Arrendamientos SantaFe](https://arrendamientossantafe.com) | `ASF` | ✅ Done (1,128) | [mapping](reference/portals/arrendamientossantafe.md) |
+| [Alberto Alvarez](https://albertoalvarez.com) | `AAL` | ✅ Done (650) | [mapping](reference/portals/albertoalvarez.md) |
+| [Metrocasas](https://metrocasas.co) | `MTC` | ⚠️ Partial (52) | [mapping](reference/portals/metrocasas.md) |
 
 ## License
 MIT

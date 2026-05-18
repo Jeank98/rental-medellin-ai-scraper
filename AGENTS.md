@@ -16,7 +16,8 @@ Scrape rental property listings from any Colombian real estate portal, extract s
 | `docs/scraping-rules.md` | Rules for exploration, field mapping, pagination, and output |
 | `docs/decision-tree.md` | What to do when fields are missing or ambiguous |
 | `config/scrapling-mcp-setup.md` | How to install and configure Scrapling MCP |
-| `reference/portal-field-mappings.md` | Field mappings discovered for specific portals |
+| `reference/portal-field-mappings.md` | Index of all portal mappings — see `reference/portals/` for individual files |
+| `reference/portals/{name}.md` | Field mappings discovered for a specific portal |
 | `db/__init__.py` | PostgreSQL connection, table schema, insert operations |
 | `scripts/insert_listings.py` | Bulk insert listings from JSON into PostgreSQL |
 
@@ -25,7 +26,7 @@ Scrape rental property listings from any Colombian real estate portal, extract s
 2. Follow its 4-phase workflow: Discovery → Bulk Scrape → Save (CSV or DB) → Report
 3. When in doubt about a field mapping, consult `docs/variable-detection.md`
 4. When a field is missing, follow `docs/decision-tree.md`
-5. Report discovered field mappings back to `reference/portal-field-mappings.md`
+5. Report discovered field mappings back to `reference/portals/{portal_name}.md`
 
 ### Output standards
 - Each listing must have exactly 11 columns in this order: `id, portal, tipo, precio, area, habitaciones, banos, parqueaderos, estrato, barrio, url`

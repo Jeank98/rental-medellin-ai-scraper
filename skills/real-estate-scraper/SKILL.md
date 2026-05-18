@@ -40,7 +40,7 @@ Output columns (always in this order):
   - `docs/columns-spec.md` — exact column types and normalization rules
   - `docs/scraping-rules.md` — pagination discovery, validation rules
   - `docs/decision-tree.md` — what to do when fields are missing or ambiguous
-  - `reference/portal-field-mappings.md` — previously discovered mappings (check first!)
+  - `reference/portals/` — previously discovered mappings (check first!)
 
 ---
 
@@ -50,7 +50,7 @@ Output columns (always in this order):
 
 **Goal**: Understand the page structure using the AI's own eyes. Do NOT skip to bulk scrape yet.
 
-**Always check `reference/portal-field-mappings.md` first** — if this portal was scraped before, use existing mappings as a starting point and verify they still hold.
+**Always check `reference/portals/` first** — if this portal was scraped before, read its individual file (e.g., `reference/portals/maxibienes.md`) to get existing mappings as a starting point. Then verify they still hold.
 
 #### Step 1.1 — Fetch page 1 as text
 
@@ -260,7 +260,7 @@ Show the first 3 and last 3 rows as inline samples.
 ### Icon-only fields (visual detection)
 - When text extraction shows numbers but no labels, use `scrapling_screenshot` to see the icons
 - The model can visually identify: bed icon → habitaciones, bath/shower → banos, car → parqueaderos
-- Record discovered icon mappings in `reference/portal-field-mappings.md` for future scrapes
+- Record discovered icon mappings in `reference/portals/{portal_name}.md` for future scrapes
 
 ### Duplicate properties
 - The composite `id` de-duplicates naturally
