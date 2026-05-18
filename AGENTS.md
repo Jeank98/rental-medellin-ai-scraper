@@ -1,6 +1,6 @@
 # AGENTS.md — Rental Medellín AI Scraper
 
-This project is a **knowledge base** for AI agents that scrape real estate rental listings from Colombian portals. It contains no runtime code, no scrapers, and no data.
+This project is a **knowledge base + tooling** for AI agents that scrape real estate rental listings from Colombian portals. It contains scraping scripts, database integration, and reference documentation.
 
 ## What every agent working with this project must know
 

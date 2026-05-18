@@ -88,7 +88,7 @@ rental-medellin-ai-scraper/
 | Portal | Prefix | Status | Reference |
 |--------|--------|--------|-----------|
 | [Maxibienes](https://www.maxibienes.com) | `MXB` | ✅ Done | See `reference/portal-field-mappings.md` |
-| [Arrendamientos SantaFe](https://arrendamientossantafe.com) | `ASF` | 🔲 Discovery complete (99 pages), bulk scrape pending | Field mapping done, see `reference/portal-field-mappings.md` |
+| [Arrendamientos SantaFe](https://arrendamientossantafe.com) | `ASF` | ✅ Done (94 pages, 1,128 listings) | Field mapping done, see `reference/portal-field-mappings.md` |
 
 ## License
 MIT
