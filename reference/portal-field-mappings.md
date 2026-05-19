@@ -4,17 +4,17 @@ Discovered field-to-column mappings for each scraped portal. Each portal has its
 
 ## Index
 
-| Portal | Prefix | File | Status |
-|--------|--------|------|--------|
-| Maxibienes | `MXB` | [maxibienes.md](portals/maxibienes.md) | ✅ Done |
-| Arrendamientos SantaFe | `ASF` | [arrendamientossantafe.md](portals/arrendamientossantafe.md) | ✅ Done |
-| Alberto Alvarez | `AAL` | [albertoalvarez.md](portals/albertoalvarez.md) | ✅ Done |
-| Metrocasas | `MTC` | [metrocasas.md](portals/metrocasas.md) | ✅ Done |
-| Santillana | `STL` | [santillana.md](portals/santillana.md) | ✅ Done |
-| Coninsa | `CON` | [coninsa.md](portals/coninsa.md) | ✅ Done |
-| Merino Hermanos | `MHR` | [merinohermanos.md](portals/merinohermanos.md) | ✅ Done |
-| Arrendamientos del Norte | `ADN` | [arrendamientosdelnorte.md](portals/arrendamientosdelnorte.md) | ✅ Done |
-| Villa Cruz | `AVC` | [arrendamientosvillacruz.md](portals/arrendamientosvillacruz.md) | ✅ Done |
-| Alnago | `ALN` | [alnago.md](portals/alnago.md) | ✅ Done |
-| Habitamos | `HBM` | [habitamos.md](portals/habitamos.md) | ✅ Done |
-| Monserrate | `MNS` | [arrendamientosmonserrate.md](portals/arrendamientosmonserrate.md) | ✅ Done |
+| Portal | Prefix | File | Strategy | Status |
+|--------|--------|------|----------|--------|
+| Maxibienes | `MXB` | [maxibienes.md](portals/maxibienes.md) | Single-phase | ✅ Done |
+| Arrendamientos SantaFe | `ASF` | [arrendamientossantafe.md](portals/arrendamientossantafe.md) | Two-phase (detail pages) | ✅ Done |
+| Alberto Alvarez | `AAL` | [albertoalvarez.md](portals/albertoalvarez.md) | Single-phase | ✅ Done |
+| Metrocasas | `MTC` | [metrocasas.md](portals/metrocasas.md) | Single-phase | ✅ Done |
+| Santillana | `STL` | [santillana.md](portals/santillana.md) | Two-phase (detail pages) | ✅ Done |
+| Coninsa | `CON` | [coninsa.md](portals/coninsa.md) | Single-phase + Load More | ✅ Done |
+| Merino Hermanos | `MHR` | [merinohermanos.md](portals/merinohermanos.md) | Single-phase | ✅ Done |
+| Arrendamientos del Norte | `ADN` | [arrendamientosdelnorte.md](portals/arrendamientosdelnorte.md) | Single-phase | ✅ Done |
+| Villa Cruz | `AVC` | [arrendamientosvillacruz.md](portals/arrendamientosvillacruz.md) | Single-phase + Load More | ✅ Done |
+| Alnago | `ALN` | [alnago.md](portals/alnago.md) | Single-phase | ✅ Done |
+| Habitamos | `HBM` | [habitamos.md](portals/habitamos.md) | Single-phase | ✅ Done |
+| Monserrate | `MNS` | [arrendamientosmonserrate.md](portals/arrendamientosmonserrate.md) | Two-phase (detail pages) | ✅ Done |

@@ -12,7 +12,7 @@ When a target field cannot be found or is ambiguous, follow this decision tree. 
 ## Area missing
 
 1. **Check description text**: some portals embed area in a text description, not a labeled field
-2. **Check detail page**: if area is only on the detail page, set to `0` (bulk scrape can't fetch detail pages)
+2. **Check detail page**: if area is only on the detail page AND the portal is single-phase → set to `0`. If the portal supports two-phase (see portal reference), fetch detail pages in phase B
 3. **Alternative units**: if area is in "hectáreas" or "fanegadas" (farms/lots), set to `0` and flag
 
 ## Habitaciones (bedrooms) vs Banos (bathrooms) confusion
@@ -33,6 +33,13 @@ habitaciones → baños → parqueaderos → área
 ```
 
 But NEVER rely on position alone. Always verify.
+
+## Banos (bathrooms) completely absent from cards
+
+1. **Check portal reference**: if the portal is two-phase (Santillana, Monserrate, Santa Fe), bathrooms are on the detail page → fetch in phase B
+2. **Check CSS classes**: verify no `span.banos` or similar class exists in card HTML
+3. **Not on card, no detail page available**: set to `0` per missing-field rule
+4. **Found in filters but not on cards**: the portal tracks bathrooms as a search filter but doesn't display per-property → set to `0`
 
 ## Parqueaderos (parking) confusion with other fields
 
@@ -56,7 +63,7 @@ Outlier detection: if parqueaderos > 10, inspect the source HTML. Common causes:
 
 ## Estrato missing (Colombia-specific)
 
-1. **Not in listing card**: check page text for "Estrato" keyword
+1. **Check detail page**: some portals show estrato on detail pages but not cards (e.g., Santa Fe, Santillana). If the portal is two-phase, extract estrato from detail pages in phase B
 2. **Only in filters sidebar**: estrato may appear in filter options but not per-property → set to `0`
 3. **Non-Colombian portal**: always `0`
 4. **Always 0 without the explicit keyword "estrato"** — never infer from price or neighborhood
