@@ -99,6 +99,8 @@ rental-medellin-ai-scraper/
 | [Metrocasas](https://metrocasas.co) | `MTC` | ✅ Done | [mapping](reference/portals/metrocasas.md) |
 | [Santillana](https://santillanasas.com) | `STL` | ✅ Done | [mapping](reference/portals/santillana.md) |
 | [Coninsa](https://www.coninsa.co) | `CON` | ✅ Done | [mapping](reference/portals/coninsa.md) |
+| [Merino Hermanos](https://merinohermanos.com) | `MHR` | ✅ Done | [mapping](reference/portals/merinohermanos.md) |
+| [Arrendamientos del Norte](https://arrendamientosdelnorte.com) | `ADN` | ✅ Done | [mapping](reference/portals/arrendamientosdelnorte.md) |
 
 ## License
 MIT
