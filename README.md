@@ -7,16 +7,21 @@ AI-agent-driven knowledge base for scraping real estate rental listings from Col
 ### 1. Install Scrapling MCP
 See [`config/scrapling-mcp-setup.md`](config/scrapling-mcp-setup.md).
 
+**Docker (recommended):**
 ```bash
-brew install scrapling
+docker pull pyd4vinci/scrapling
 ```
 
 Add to `~/.config/opencode/opencode.json`:
 ```json
-"scrapling": {
-  "command": ["/opt/homebrew/bin/scrapling", "mcp"],
-  "enabled": true,
-  "type": "local"
+{
+  "mcp": {
+    "scrapling": {
+      "command": ["docker", "run", "-i", "--rm", "pyd4vinci/scrapling", "mcp"],
+      "enabled": true,
+      "type": "local"
+    }
+  }
 }
 ```
 
@@ -72,7 +77,12 @@ rental-medellin-ai-scraper/
 │       ├── maxibienes.md
 │       ├── arrendamientossantafe.md
 │       ├── albertoalvarez.md
-│       └── metrocasas.md
+│       ├── metrocasas.md
+│       ├── santillana.md
+│       ├── coninsa.md
+│       ├── merinohermanos.md
+│       ├── arrendamientosdelnorte.md
+│       └── arrendamientosvillacruz.md
 ```
 
 ## Output Columns
@@ -101,6 +111,7 @@ rental-medellin-ai-scraper/
 | [Coninsa](https://www.coninsa.co) | `CON` | ✅ Done | [mapping](reference/portals/coninsa.md) |
 | [Merino Hermanos](https://merinohermanos.com) | `MHR` | ✅ Done | [mapping](reference/portals/merinohermanos.md) |
 | [Arrendamientos del Norte](https://arrendamientosdelnorte.com) | `ADN` | ✅ Done | [mapping](reference/portals/arrendamientosdelnorte.md) |
+| [Villa Cruz](https://www.arrendamientosvillacruz.com.co) | `AVC` | ✅ Done | [mapping](reference/portals/arrendamientosvillacruz.md) |
 
 ## License
 MIT
