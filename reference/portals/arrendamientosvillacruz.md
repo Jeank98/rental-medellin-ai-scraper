@@ -26,19 +26,14 @@
 - Full extraction requires Python API scroll: `StealthyFetcher.fetch()` + `page_action` with `page.mouse.wheel()`
 - "También te puede interesar" section has duplicates — deduplicate by `id`
 
-**Dynamic scroll pattern:**
+**Dynamic scroll pattern (same as Coninsa — count-based, never hardcoded):**
 ```python
 def scroll_to_load_all(page: Page):
-    last_count = 0
+    last = page.locator('text=COD:').count()
     while True:
         page.mouse.wheel(0, 3000)
-        page.wait_for_timeout(1500)
+        page.wait_for_timeout(2000)
         current = page.locator('text=COD:').count()
-        if current == last_count:
-            page.mouse.wheel(0, 5000)  # one more attempt
-            page.wait_for_timeout(2000)
-            if page.locator('text=COD:').count() == last_count:
-                break  # stops when no new listings load
-        last_count = current
+        if current == last: break  # stopped growing — all loaded
+        last = current
 ```
-Never hardcode scroll count — stops when listing count stabilizes.

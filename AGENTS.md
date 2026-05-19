@@ -14,22 +14,33 @@
 - `scrapling_bulk_get` for parallel multi-page extraction
 - The agent's own reasoning to map text → 11 columns per `docs/variable-detection.md`
 
-### MCP Limitation — Button Click Fallback
+### MCP Limitation — Button Click / Scroll Fallback
 
-Scrapling MCP does not expose `page_action` for clicks. For "Load More" portals:
+Scrapling MCP does not expose `page_action` for clicks or scrolls. For "Load More" portals, use Python API:
 
 ```python
 from scrapling import StealthyFetcher
 from playwright.sync_api import Page
 
 def click_load_more(page: Page):
-    last = 0
+    last = page.locator('text=Código:').count()
     while True:
-        # Dynamically detect when loading stops — never hardcode count
-        ...
+        btn = page.locator('text=Cargar más inmuebles')
+        if btn.count() == 0 or not btn.first.is_visible():
+            break  # button gone
+        btn.first.click()
+        page.wait_for_timeout(2000)
+        current = page.locator('text=Código:').count()
+        if current == last: break  # stopped growing — all loaded
+        last = current
 
 resp = StealthyFetcher.fetch(url, page_action=click_load_more, headless=True)
-text = resp.get_all_text()
 ```
 
-See `reference/portals/coninsa.md` for the full example.
+**Never hardcode click/scroll counts.** Stop when:
+1. Button disappears OR
+2. Listing count stops growing (comparing before/after each interaction)
+
+Same pattern for scroll-based portals: compare element count before/after each scroll.
+
+See `reference/portals/coninsa.md` and `reference/portals/arrendamientosvillacruz.md` for full examples.
