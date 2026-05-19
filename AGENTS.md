@@ -23,10 +23,10 @@ from scrapling import StealthyFetcher
 from playwright.sync_api import Page
 
 def click_load_more(page: Page):
+    last = 0
     while True:
-        btn = page.locator('text=Cargar más inmuebles')
-        if btn.count() == 0: break
-        btn.first.click(); page.wait_for_timeout(2000)
+        # Dynamically detect when loading stops — never hardcode count
+        ...
 
 resp = StealthyFetcher.fetch(url, page_action=click_load_more, headless=True)
 text = resp.get_all_text()

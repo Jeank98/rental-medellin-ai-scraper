@@ -24,10 +24,8 @@ from playwright.sync_api import Page
 def click_load_more(page: Page):
     while True:
         btn = page.locator('text=Cargar más inmuebles')
-        if btn.count() == 0 or not btn.first.is_visible():
-            break
-        btn.first.click()
-        page.wait_for_timeout(2000)
+        if btn.count() == 0: break  # dynamically stops when button disappears
+        btn.first.click(); page.wait_for_timeout(2000)
 
 resp = StealthyFetcher.fetch(url, page_action=click_load_more, headless=True)
 text = resp.get_all_text()
