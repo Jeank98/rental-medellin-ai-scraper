@@ -15,3 +15,4 @@ Discovered field-to-column mappings for each scraped portal. Each portal has its
 | Merino Hermanos | `MHR` | [merinohermanos.md](portals/merinohermanos.md) | ✅ Done |
 | Arrendamientos del Norte | `ADN` | [arrendamientosdelnorte.md](portals/arrendamientosdelnorte.md) | ✅ Done |
 | Villa Cruz | `AVC` | [arrendamientosvillacruz.md](portals/arrendamientosvillacruz.md) | ✅ Done |
+| Alnago | `ALN` | [alnago.md](portals/alnago.md) | 🔍 Phase 1 Done |
