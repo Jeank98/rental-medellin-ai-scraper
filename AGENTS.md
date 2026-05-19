@@ -23,10 +23,23 @@ Scrape rental property listings from any Colombian real estate portal, extract s
 
 ### Workflow for scraping a new portal
 1. Load `skills/real-estate-scraper/SKILL.md`
-2. Follow its 4-phase workflow: Discovery → Bulk Scrape → Save (CSV or DB) → Report
-3. When in doubt about a field mapping, consult `docs/variable-detection.md`
-4. When a field is missing, follow `docs/decision-tree.md`
-5. Report discovered field mappings back to `reference/portals/{portal_name}.md`
+2. **CHECK `reference/portal-field-mappings.md` FIRST** — if portal exists, load its individual file from `reference/portals/{name}.md`. This gives you the card selector, pagination pattern, known field mappings, and portal-specific gotchas. Skip Phase 1 Discovery — go straight to bulk scrape.
+3. If portal is NOT in the index, follow the full 4-phase workflow: Discovery → Bulk Scrape → Save (CSV or DB) → Report
+4. When in doubt about a field mapping, consult `docs/variable-detection.md`
+5. When a field is missing, follow `docs/decision-tree.md`
+6. Report discovered field mappings back to `reference/portals/{portal_name}.md`
+
+### Portal knowledge recycling (MANDATORY)
+
+**When a user asks to scrape a known portal:** Load `reference/portals/{name}.md` immediately. Do NOT re-discover page structure. The file tells you:
+- Card selector and listings per page
+- Pagination URL pattern (how to generate all page URLs)
+- Which fields are present vs missing on cards
+- Whether detail pages are needed (two-phase portals)
+- Portal-specific gotchas (dual prices, compound tipos, text-based garaje, etc.)
+- Whether Python API fallback is needed (Coninsa, Villa Cruz)
+
+This makes repeat scrapes instant — no Phase 1 needed for known portals.
 
 ### Output standards
 - Each listing must have exactly 11 columns in this order: `id, portal, tipo, precio, area, habitaciones, banos, parqueaderos, estrato, barrio, url`

@@ -50,7 +50,7 @@ Output columns (always 11, in this order):
 
 ### Phase 1: Discovery (single page)
 
-**Check `reference/portals/` first** — if scraped before, verify existing mappings.
+**Check `reference/portal-field-mappings.md` first** — if this portal already has a file in `reference/portals/` (e.g., `reference/portals/maxibienes.md`), load it immediately. The file tells you the card selector, pagination URL pattern, field mappings, and all gotchas. **If the portal file exists, SKIP Phase 1 Discovery entirely — go directly to Phase 2 (Bulk Scrape).** Only run Discovery for brand-new portals not in the index.
 
 #### Step 1.1 — Fetch page 1 as text
 
