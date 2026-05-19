@@ -44,11 +44,56 @@ def main():
 
     rows = []
     portal = ""
+    flagged = []
     for item in data:
         item["ciudad"] = ciudad
         if not portal:
             portal = item.get("portal", "")
+        
+        # === VALIDATION ===
+        issues = []
+        
+        # Price: must be > 100,000 COP (minimum realistic rent)
+        precio = item.get("precio", 0)
+        if 0 < precio < 100000:
+            issues.append(f"precio={precio} too low → 0")
+            item["precio"] = 0
+        if precio > 500_000_000:
+            issues.append(f"precio={precio:,} unusually high")
+        
+        # Area: must be in reasonable range
+        area = item.get("area", 0)
+        if area > 10000:
+            issues.append(f"area={area} unusually high")
+        
+        # Habitaciones: 0-30 range
+        hab = item.get("habitaciones", 0)
+        if hab > 30:
+            issues.append(f"habitaciones={hab} > 30")
+        
+        # URL: must be absolute
+        url = item.get("url", "")
+        if url and not url.startswith("http"):
+            issues.append(f"url not absolute: {url[:50]}")
+        if not url:
+            issues.append("url is empty")
+        
+        # ID: must not be empty
+        eid = item.get("id", "")
+        if not eid:
+            issues.append("id is empty")
+        
+        if issues:
+            flagged.append({"id": eid, "issues": issues})
+        
         rows.append(item)
+    
+    if flagged:
+        print(f"⚠️  {len(flagged)} listings flagged:")
+        for f in flagged[:5]:
+            print(f"  {f['id']}: {', '.join(f['issues'])}")
+        if len(flagged) > 5:
+            print(f"  ... and {len(flagged)-5} more")
 
     before = get_count()
 
