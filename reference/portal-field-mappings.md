@@ -14,3 +14,4 @@ Discovered field-to-column mappings for each scraped portal. Each portal has its
 | Coninsa | `CON` | [coninsa.md](portals/coninsa.md) | ✅ Done |
 | Merino Hermanos | `MHR` | [merinohermanos.md](portals/merinohermanos.md) | ✅ Done |
 | Arrendamientos del Norte | `ADN` | [arrendamientosdelnorte.md](portals/arrendamientosdelnorte.md) | ✅ Done |
+| Villa Cruz | `AVC` | [arrendamientosvillacruz.md](portals/arrendamientosvillacruz.md) | ✅ Done |
