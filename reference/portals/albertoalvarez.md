@@ -37,6 +37,6 @@
 - Two hidden JSON textareas per card (`.field-property` and `.info-prop-mobilia`) — use `.field-property`
 - Parking only available via JSON (not visible in listing card HTML)
 - "casa vivienda" is the raw propertyType for houses — normalize to `casa`
-- Estrato 7 found in 5 listings — source data error (Colombia max is 6)
-- 85 unique neighborhoods across 650 listings
+- Estrato 7 found in some listings — source data error (Colombia max is 6)
+- Multiple neighborhoods observed across all listings
 - Three tipos must be scraped separately (different URLs): apartamento, casa, apartaestudio

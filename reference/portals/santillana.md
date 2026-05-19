@@ -4,7 +4,7 @@
 - **Type**: Server-rendered (Django-like)
 - **Listing card**: `div.item`
 - **Listings per page**: 12
-- **Total pages**: 6 (72 properties; 2026-05-18)
+- **Total pages**: Discovered via pagination links (`/search?page=N`)
 - **Pagination**: `/search?&page=N` (must use search endpoint, `/s/alquiler/.../page/N/` doesn't paginate)
 - **Key feature**: **Card fields incomplete — requires two-phase scrape**
 
@@ -29,4 +29,4 @@
 - Barrio absent for metro-area properties (Itagüí, Sabaneta, Envigado, Bello)
 - Listing card `.ubicacion` always shows "Colombia" — useless
 - Uses `scrapling.find_all("div.item")` for cards and `scrapling.find_all("ul.list-li li")` for details
-- 72 listings across 7 property types: apartamento (31), casa (18), local (10), apartaestudio (10), bodega (1), oficina (1), lote (1)
+- 7 property types observed: apartamento, casa, local, apartaestudio, bodega, oficina, lote

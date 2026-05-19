@@ -93,12 +93,12 @@ rental-medellin-ai-scraper/
 ## Portals Scraped
 | Portal | Prefix | Status | Reference |
 |--------|--------|--------|-----------|
-| [Maxibienes](https://www.maxibienes.com) | `MXB` | ✅ Done (870) | [mapping](reference/portals/maxibienes.md) |
-| [Arrendamientos SantaFe](https://arrendamientossantafe.com) | `ASF` | ✅ Done (1,128) | [mapping](reference/portals/arrendamientossantafe.md) |
-| [Alberto Alvarez](https://albertoalvarez.com) | `AAL` | ✅ Done (650) | [mapping](reference/portals/albertoalvarez.md) |
-| [Metrocasas](https://metrocasas.co) | `MTC` | ✅ Done (71) | [mapping](reference/portals/metrocasas.md) |
-| [Santillana](https://santillanasas.com) | `STL` | ✅ Done (72) | [mapping](reference/portals/santillana.md) |
-| [Coninsa](https://www.coninsa.co) | `CON` | ✅ Done (161) | [mapping](reference/portals/coninsa.md) |
+| [Maxibienes](https://www.maxibienes.com) | `MXB` | ✅ Done | [mapping](reference/portals/maxibienes.md) |
+| [Arrendamientos SantaFe](https://arrendamientossantafe.com) | `ASF` | ✅ Done | [mapping](reference/portals/arrendamientossantafe.md) |
+| [Alberto Alvarez](https://albertoalvarez.com) | `AAL` | ✅ Done | [mapping](reference/portals/albertoalvarez.md) |
+| [Metrocasas](https://metrocasas.co) | `MTC` | ✅ Done | [mapping](reference/portals/metrocasas.md) |
+| [Santillana](https://santillanasas.com) | `STL` | ✅ Done | [mapping](reference/portals/santillana.md) |
+| [Coninsa](https://www.coninsa.co) | `CON` | ✅ Done | [mapping](reference/portals/coninsa.md) |
 
 ## License
 MIT

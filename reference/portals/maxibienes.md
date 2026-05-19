@@ -4,7 +4,7 @@
 - **Type**: Server-rendered PHP
 - **Listing card**: `.grid-style1 .item`
 - **Listings per page**: 12
-- **Total pages**: 73 (870 properties, all tipos — no filter; 2026-05-18)
+- **Total pages**: Discovered dynamically from `var totalInmuebles` and `var totalpagina` in page HTML
 - **Pagination**: `/pagina/N?query` (no trailing slash before `?`)
 - **Pagination values**: discovered dynamically from `var totalInmuebles` and `var totalpagina` in page HTML
 

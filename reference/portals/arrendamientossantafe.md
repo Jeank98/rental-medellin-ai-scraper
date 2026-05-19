@@ -4,7 +4,7 @@
 - **Type**: Server-rendered (Django or similar)
 - **Listing card**: `.property-card`
 - **Listings per page**: 12
-- **Total pages**: 94 (1,128 properties; 2026-05-18)
+- **Total pages**: Discovered via binary search with stale-card detection — pages beyond last valid serve placeholder listing (REF: A9692)
 - **Pagination**: `?page=N&bussines_type=Arrendar`
 - **Pagination discovery**: binary search with stale-card detection — pages beyond 94 serve placeholder listing (REF: A9692)
 

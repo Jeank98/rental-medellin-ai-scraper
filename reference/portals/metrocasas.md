@@ -4,7 +4,7 @@
 - **Type**: JS-rendered WordPress (RealHomes theme)
 - **Listing card**: No reliable CSS selector (use `data-property-title` attrs)
 - **Listings per page**: 6
-- **Total pages**: 12 (71 properties; 2026-05-18)
+- **Total pages**: Discovered via pagination links (`/page/N/`)
 - **Pagination**: `/page/N/?query...`
 - **Key feature**: **Scrapling MCP `get` renders JS natively** — no Docker Chrome needed anymore
 
@@ -43,5 +43,4 @@ The rendered text shows listings with titles "TIPO en BARRIO", prices, and field
 **Notes**:
 - MCP `scrapling_get` renders JS — no browser/fetch needed
 - Titles may use "en" or omit it: "Apartamento en Laureles" or "Apartaestudio La America"
-- 71 listings extracted with MCP-native approach
 - Area missing for some apartaestudios

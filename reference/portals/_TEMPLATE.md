@@ -9,7 +9,7 @@ When discovering a new portal, create a new file `reference/portals/{portal_name
 - **Type**: {server-rendered | JS-rendered | hybrid}
 - **Listing card**: {css_selector}
 - **Listings per page**: {N}
-- **Total pages**: {N} ({total} properties; {date})
+- **Total pages**: {how to discover pagination}
 - **Pagination**: {url_pattern}
 - **Key feature**: {any special discovery about this portal}
 

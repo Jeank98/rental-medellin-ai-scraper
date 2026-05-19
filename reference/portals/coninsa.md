@@ -4,7 +4,7 @@
 - **Type**: JS-rendered SPA (Gatsby + Drupal)
 - **Listing card**: No CSS selector — listings load via client-side JS
 - **Listings per page**: 12 (infinite scroll via "Cargar más" button)
-- **Total pages**: 14 loads (161 listings; 2026-05-18)
+- **Total pages**: Infinite scroll — "Cargar más inmuebles" button, ~14 clicks to exhaust
 - **Pagination**: "Cargar más inmuebles" button — React state update, no URL parameter
 - **Key feature**: **Needs Python API fallback for click automation** (MCP doesn't expose `page_action`)
 
@@ -52,8 +52,7 @@ text = resp.get_all_text()
 | `url` | Fixed search URL | `https://www.coninsa.co/arrendamientos/vivienda/?text=Medellin` |
 
 **Notes**:
-- Full scrape requires browser + click automation (14 clicks for Medellín)
-- `scrapling_fetch` (MCP browser) renders initial 12 — use for discovery only
-- 161 listings extracted (7 missed in boundary parsing)
+- Full scrape requires browser + click automation (repeated clicks on "Cargar más")
+- `scrapling_fetch` (MCP browser) renders initial batch — use for discovery only
 - Property types: apartamento, casa, finca
 - Listings span multiple cities — filter by barrio for Medellín-specific
