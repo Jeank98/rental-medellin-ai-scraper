@@ -12,3 +12,5 @@ Discovered field-to-column mappings for each scraped portal. Each portal has its
 | Metrocasas | `MTC` | [metrocasas.md](portals/metrocasas.md) | ✅ Done |
 | Santillana | `STL` | [santillana.md](portals/santillana.md) | ✅ Done |
 | Coninsa | `CON` | [coninsa.md](portals/coninsa.md) | ✅ Done |
+| Merino Hermanos | `MHR` | [merinohermanos.md](portals/merinohermanos.md) | ✅ Done |
+| Arrendamientos del Norte | `ADN` | [arrendamientosdelnorte.md](portals/arrendamientosdelnorte.md) | ✅ Done |

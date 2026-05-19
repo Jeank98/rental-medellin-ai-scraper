@@ -22,16 +22,21 @@ from scrapling import StealthyFetcher
 from playwright.sync_api import Page
 
 def click_load_more(page: Page):
+    last = page.locator('text=Código:').count()
     while True:
         btn = page.locator('text=Cargar más inmuebles')
         if btn.count() == 0 or not btn.first.is_visible():
-            break
+            break  # button gone
         btn.first.click()
         page.wait_for_timeout(2000)
+        current = page.locator('text=Código:').count()
+        if current == last: break  # count stabilized — no new listings
+        last = current
 
 resp = StealthyFetcher.fetch(url, page_action=click_load_more, headless=True)
 text = resp.get_all_text()
 ```
+Stops when button disappears OR listing count stops growing. Never hardcodes a click limit.
 
 **Why Python API:** Scrapling's MCP server does not expose `page_action`. For portals requiring button clicks, use the Python API directly. This is the documented fallback when MCP tool limitations are hit.
 
