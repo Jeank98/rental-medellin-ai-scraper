@@ -11,4 +11,4 @@ Discovered field-to-column mappings for each scraped portal. Each portal has its
 | Alberto Alvarez | `AAL` | [albertoalvarez.md](portals/albertoalvarez.md) | ✅ Done | 650 |
 | Metrocasas | `MTC` | [metrocasas.md](portals/metrocasas.md) | ✅ Done | 71 |
 | Santillana | `STL` | [santillana.md](portals/santillana.md) | ✅ Done | 72 |
-| Coninsa | `CON` | [coninsa.md](portals/coninsa.md) | 🔲 Blocked (JS SPA) | — |
+| Coninsa | `CON` | [coninsa.md](portals/coninsa.md) | ✅ Done | 161 |

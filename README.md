@@ -98,7 +98,7 @@ rental-medellin-ai-scraper/
 | [Alberto Alvarez](https://albertoalvarez.com) | `AAL` | ✅ Done (650) | [mapping](reference/portals/albertoalvarez.md) |
 | [Metrocasas](https://metrocasas.co) | `MTC` | ✅ Done (71) | [mapping](reference/portals/metrocasas.md) |
 | [Santillana](https://santillanasas.com) | `STL` | ✅ Done (72) | [mapping](reference/portals/santillana.md) |
-| [Coninsa](https://www.coninsa.co) | `CON` | 🔲 Blocked (JS SPA) | [mapping](reference/portals/coninsa.md) |
+| [Coninsa](https://www.coninsa.co) | `CON` | ✅ Done (161) | [mapping](reference/portals/coninsa.md) |
 
 ## License
 MIT
