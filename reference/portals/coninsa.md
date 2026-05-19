@@ -1,26 +1,58 @@
 # Coninsa (`CON`)
 
 - **URL**: `https://www.coninsa.co/arrendamientos/vivienda/?text=Medellin`
-- **Type**: JS-rendered SPA (React/headless CMS)
-- **Listing card**: Unknown — listings load via AJAX after page load
-- **Listings per load**: Unknown
-- **Total listings**: Unknown
-- **Pagination**: "Cargar más inmuebles" button — infinite scroll via AJAX
-- **Status**: 🔲 **Blocked** — requires browser automation with click simulation
+- **Type**: JS-rendered SPA (Gatsby + Drupal)
+- **Listing card**: No CSS selector — listings load via client-side JS
+- **Listings per page**: 12 (infinite scroll via "Cargar más" button)
+- **Total pages**: Infinite scroll — "Cargar más inmuebles" button, ~14 clicks to exhaust
+- **Pagination**: "Cargar más inmuebles" button — React state update, no URL parameter
+- **Key feature**: **Needs Python API fallback for click automation** (MCP doesn't expose `page_action`)
 
-## Blockers
+## Scraping Strategy
 
-1. **No server-rendered listings**: All listing data loads via JavaScript after page load
-2. **No discovered API endpoint**: Common patterns (wp-json, REST API) return 404
-3. **Infinite scroll button**: Needs browser session + click automation to reach all properties
-4. **Scrapling MCP** would solve this with `open_session` + `fetch` + click simulation, but MCP tools are not yet loaded in the session
+**MCP alone insufficient** — `scrapling_fetch` renders initial 12 listings but can't click "Cargar más".
 
-## Next Steps
+**Required approach:**
+1. Use Python API `StealthyFetcher.fetch()` with `page_action` callback
+2. In `page_action`, click "Cargar más inmuebles" repeatedly until button disappears
+3. Extract all rendered text
 
-When Scrapling MCP tools are available:
-1. `scrapling_open_session(type: "dynamic")`
-2. `scrapling_fetch` the page with `session_id`
-3. Use CSS selectors to find "Cargar más" button, click repeatedly until exhausted
-4. Extract listing data from rendered HTML
+```python
+from scrapling import StealthyFetcher
+from playwright.sync_api import Page
 
-Alternatively, find the API endpoint by inspecting network requests in browser DevTools.
+def click_load_more(page: Page):
+    while True:
+        btn = page.locator('text=Cargar más inmuebles')
+        if btn.count() == 0 or not btn.first.is_visible():
+            break
+        btn.first.click()
+        page.wait_for_timeout(2000)
+
+resp = StealthyFetcher.fetch(url, page_action=click_load_more, headless=True)
+text = resp.get_all_text()
+```
+
+**Why Python API:** Scrapling's MCP server does not expose `page_action`. For portals requiring button clicks, use the Python API directly. This is the documented fallback when MCP tool limitations are hit.
+
+## Field Mappings
+
+| Column | Source | Pattern |
+|--------|--------|---------|
+| `id` | `CON-{code}` | `Código: 60565` in text |
+| `portal` | `coninsa` | Fixed |
+| `tipo` | Title line before `en arriendo` | `Apartamento` → `apartamento` |
+| `precio` | `$` line | `$5.400.000` → `5400000` |
+| `area` | `m²` line | `133 m²` → `133` |
+| `habitaciones` | Numeric line before code (pos 0) | Reversed order: ba, hab, pq |
+| `banos` | Numeric line before code (pos 1) | |
+| `parqueaderos` | Numeric line before code (pos 2) | |
+| `estrato` | **Not in listing** | → `0` |
+| `barrio` | Last segment of title after commas | `EL POBLADO` → `El Poblado` |
+| `url` | Constructed from code | `https://www.coninsa.co/arrendamientos/vivienda/inmueble/{code}/` |
+
+**Notes**:
+- Full scrape requires browser + click automation (repeated clicks on "Cargar más")
+- `scrapling_fetch` (MCP browser) renders initial batch — use for discovery only
+- Property types: apartamento, casa, finca
+- Listings span multiple cities — filter by barrio for Medellín-specific

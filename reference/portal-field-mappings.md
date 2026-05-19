@@ -4,11 +4,11 @@ Discovered field-to-column mappings for each scraped portal. Each portal has its
 
 ## Index
 
-| Portal | Prefix | File | Status | Listings |
-|--------|--------|------|--------|----------|
-| Maxibienes | `MXB` | [maxibienes.md](portals/maxibienes.md) | ✅ Done | 870 |
-| Arrendamientos SantaFe | `ASF` | [arrendamientossantafe.md](portals/arrendamientossantafe.md) | ✅ Done | 1,128 |
-| Alberto Alvarez | `AAL` | [albertoalvarez.md](portals/albertoalvarez.md) | ✅ Done | 650 |
-| Metrocasas | `MTC` | [metrocasas.md](portals/metrocasas.md) | ✅ Done | 71 |
-| Santillana | `STL` | [santillana.md](portals/santillana.md) | ✅ Done | 72 |
-| Coninsa | `CON` | [coninsa.md](portals/coninsa.md) | 🔲 Blocked (JS SPA) | — |
+| Portal | Prefix | File | Status |
+|--------|--------|------|--------|
+| Maxibienes | `MXB` | [maxibienes.md](portals/maxibienes.md) | ✅ Done |
+| Arrendamientos SantaFe | `ASF` | [arrendamientossantafe.md](portals/arrendamientossantafe.md) | ✅ Done |
+| Alberto Alvarez | `AAL` | [albertoalvarez.md](portals/albertoalvarez.md) | ✅ Done |
+| Metrocasas | `MTC` | [metrocasas.md](portals/metrocasas.md) | ✅ Done |
+| Santillana | `STL` | [santillana.md](portals/santillana.md) | ✅ Done |
+| Coninsa | `CON` | [coninsa.md](portals/coninsa.md) | ✅ Done |
