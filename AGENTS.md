@@ -70,6 +70,53 @@ This makes repeat scrapes instant — no Phase 1 needed for known portals.
 - `scrapling_bulk_get` for parallel multi-page extraction
 - The agent's own reasoning to map text → 11 columns per `docs/variable-detection.md`
 
+### ⛔ SAMPLE-FIRST RULE (mandatory)
+
+**Never bulk-scrape before verifying extraction on a sample.** Before running any bulk operation (full portal scrape, detail-page batch, DB mass-update), test the extraction logic on 1-3 pages first and confirm the output is correct. Only then scale up.
+
+**Triggers that require sample-first:**
+- New extraction logic (any Python script or agent reasoning that parses page content)
+- New portal or new two-phase strategy
+- New field being extracted from a known source
+- DB mass-update script
+
+**Sample verification checklist:**
+- [ ] Fetch 1-3 sample pages
+- [ ] Run extraction logic on each
+- [ ] Verify every target field has a non-zero value where expected (banos > 0 for residential, estrato 1-6, etc.)
+- [ ] Check for edge cases: missing fields, 0 values, out-of-range values
+- [ ] **Only after all samples pass** → run the full batch
+
+**Anti-pattern:**
+- Running 1,128 detail pages 3 times because the extraction had a bug that would have been caught on page 1
+
+### ⛔ BATCH DELEGATION (preferred for bulk operations)
+
+**When scraping 200+ detail pages or search pages, delegate batches to sub-agents in parallel.** This keeps the orchestrator context clean and reduces total wall-clock time.
+
+**When to use:**
+- Phase B of two-phase portals (100+ detail pages)
+- Full portal scrapes (50+ search pages)
+- Any operation with >200 HTTP requests
+
+**How to delegate:**
+1. Split listings into batches of 100-200
+2. Write a reusable batch runner script (Python using `scrapling.Fetcher`)
+3. Save each batch's URLs to a JSON file
+4. Launch all batches as `delegate` sub-agents in parallel
+5. Merge results and update DB
+
+**Example** (Santa Fe Phase B, 1,128 detail pages → 8 batches × 150):
+- Generated 8 JSON batch files with IDs and URLs
+- Single `asf_batch_runner.py` script shared by all batches
+- 8 `delegate` calls in parallel — all completed in ~25s
+- Merged results and batch-updated DB with CASE WHEN
+
+**Do NOT:**
+- Run 1,000+ sequential `scrapling_bulk_get` calls in the orchestrator
+- Try to parallelize by writing per-portal threading code — delegation is simpler
+- Re-scrape entire portal to test a fix — test on 1-3 samples first per SAMPLE-FIRST RULE
+
 ### MCP Limitation — Button Click / Scroll Fallback
 
 Scrapling MCP does not expose `page_action` for clicks or scrolls. For "Load More" portals, use Python API:

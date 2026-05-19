@@ -37,24 +37,40 @@ After mapping fields on one card, verify the same mapping works on at least 3 di
   - Whether the site serves stale/placeholder listings past the end (detect by comparing listing codes across pages)
 - **Binary search**: when no pagination info is available, binary-search to find the last valid page by checking if pages return fresh listing codes vs. stale duplicates
 
+### 1.6 Identify missing fields and two-phase potential
+- After mapping fields on 3+ cards, list which of the 11 columns are missing from cards
+- For each missing field, check the portal reference: some portals are documented as two-phase (detail pages have the missing fields)
+- If banos or estrato are missing AND the portal reference shows them on detail pages → this portal requires two-phase scrape
+- **Field check order**: inspect CSS classes first (1.2), then check if missing fields exist on the detail page
+- Document the two-phase strategy (if needed) in the portal reference file
+
 ## Phase 2: Bulk Scrape
 
 ### 2.1 Use `scrapling_bulk_get` when possible
 For server-rendered pages, `bulk_get` is faster and cheaper than browser-based fetching.
 
-### 2.2 Use `scrapling_bulk_fetch` for JavaScript-rendered pages
+### 2.2 Two-phase portals: cards first, then detail pages
+- **Phase A**: `scrapling_bulk_get` all search result pages → extract card-level fields + detail page URLs
+- **Phase B**: `scrapling_bulk_get` all detail page URLs → extract ONLY the fields missing from cards (typically banos, estrato)
+- **Merge**: update phase A listings with phase B values; keep card values for fields already present
+- Detail pages that fail to load → keep card defaults (0 for numeric, "" for string)
+
+### 2.3 Two-phase portals requiring JS: use `scrapling_bulk_fetch` or `bulk_stealthy_fetch`
+If detail pages require JavaScript rendering (not Santa Fe / Santillana / Monserrate — these are server-rendered).
+
+### 2.4 Use `scrapling_bulk_fetch` for JavaScript-rendered pages
 If listings load via AJAX/JavaScript, use `bulk_fetch` or `bulk_stealthy_fetch`.
 
-### 2.3 Batch pagination for large portals
+### 2.5 Batch pagination for large portals
 If total pages > 30, split into batches of ~25 pages per `bulk_get` call to avoid timeouts.
 
-### 2.4 Always use stealthy headers
+### 2.6 Always use stealthy headers
 ```json
 { "stealthy_headers": true }
 ```
 Prevents basic anti-bot detection.
 
-### 2.5 Respect the portal
+### 2.7 Respect the portal
 If the server returns 429 (rate limit), add delays between batches. If blocked, switch to `stealthy_fetch`.
 
 ## Phase 3: Extraction and Typing
