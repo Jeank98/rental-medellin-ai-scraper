@@ -49,7 +49,7 @@ text = resp.get_all_text()
 | `parqueaderos` | Numeric line before code (pos 2) | |
 | `estrato` | **Not in listing** | → `0` |
 | `barrio` | Last segment of title after commas | `EL POBLADO` → `El Poblado` |
-| `url` | Fixed search URL | `https://www.coninsa.co/arrendamientos/vivienda/?text=Medellin` |
+| `url` | Constructed from code | `https://www.coninsa.co/arrendamientos/vivienda/inmueble/{code}/` |
 
 **Notes**:
 - Full scrape requires browser + click automation (repeated clicks on "Cargar más")
