@@ -71,17 +71,58 @@ def main():
         if hab > 30:
             issues.append(f"habitaciones={hab} > 30")
         
-        # URL: must be absolute
+        # Banos: 0-20 range
+        banos = item.get("banos", 0)
+        if banos > 20:
+            issues.append(f"banos={banos} > 20")
+        
+        # Parqueaderos: 0-10 range (flag > 5)
+        parq = item.get("parqueaderos", 0)
+        if parq > 10:
+            issues.append(f"parqueaderos={parq} > 10")
+        
+        # Estrato: 0-6 (Colombia range; flag 7+)
+        estrato = item.get("estrato", 0)
+        if estrato > 6:
+            issues.append(f"estrato={estrato} > 6 (Colombia max)")
+        
+        # Barrio: must not be empty, must not contain code/price artifacts
+        barrio = item.get("barrio", "")
+        if not barrio:
+            issues.append("barrio is empty")
+        elif any(kw in barrio.lower() for kw in ['código', 'code:', 'arriendo', '$', 'rent:']):
+            issues.append(f"barrio contains artifacts: {barrio[:60]}")
+            # Try to salvage: take first part before "."
+            item["barrio"] = barrio.split('.')[0].strip()
+        
+        # URL: must be absolute, must not have en. subdomain
         url = item.get("url", "")
         if url and not url.startswith("http"):
             issues.append(f"url not absolute: {url[:50]}")
+        if 'en.habitamos' in url:
+            issues.append("url has en. subdomain")
+            item["url"] = url.replace('en.habitamos.com.co', 'habitamos.com.co')
         if not url:
             issues.append("url is empty")
         
-        # ID: must not be empty
+        # ID: must not be empty, must not contain price artifacts
         eid = item.get("id", "")
         if not eid:
             issues.append("id is empty")
+        elif any(kw in eid.lower() for kw in ['rent:', 'sale:', '$']):
+            issues.append(f"id contains price artifacts: {eid}")
+            # Extract numeric code
+            import re
+            m = re.search(r'(\d+)', eid)
+            if m and item.get("portal"):
+                item["id"] = f"{item['portal'][:3].upper()}-{m.group(1)}"
+        
+        # Tipo: must not be empty
+        tipo = item.get("tipo", "")
+        if not tipo:
+            issues.append("tipo is empty")
+        elif tipo in ('arriendo', 'venta', 'for lease', 'for sale'):
+            issues.append(f"tipo is transaction type, not property type: {tipo}")
         
         if issues:
             flagged.append({"id": eid, "issues": issues})
