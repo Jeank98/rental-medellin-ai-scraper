@@ -27,3 +27,10 @@
 - Compound tipos: Casa-local→casa, Local-house→local, Office-Consultorio→oficina
 - "For Lease/Sale" = dual price: extract "Rental price:" value
 - 148 listings extracted (2026-05-18)
+
+## Zero Genuineness
+
+| Field | Default 0 | Status |
+|-------|-----------|--------|
+| `area` | 0 | ✅ Genuine — Not in card |
+| `estrato` | 0 | ✅ Genuine — Not in card |

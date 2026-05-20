@@ -37,3 +37,9 @@ def scroll_to_load_all(page: Page):
         if current == last: break  # stopped growing — all loaded
         last = current
 ```
+
+## Zero Genuineness
+
+| Field | Default 0 | Status |
+|-------|-----------|--------|
+| `estrato` | 0 | ✅ Genuine — Not in card |

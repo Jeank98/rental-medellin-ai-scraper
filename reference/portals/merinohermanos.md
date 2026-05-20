@@ -26,3 +26,10 @@
 - Property types include compound: `Oficina-Consultorio`, `Casa-Finca`, `Casa-local`, `Oficina-Local`
 - Standard pagination via `?page=N` — MCP-native with `scrapling_bulk_get`
 - 30 listings per page, 8 pages for arriendo
+
+## Zero Genuineness
+
+| Field | Default 0 | Status |
+|-------|-----------|--------|
+| `parqueaderos` | 0 | ✅ Genuine — Not in card |
+| `estrato` | 0 | ✅ Genuine — Not in card |
