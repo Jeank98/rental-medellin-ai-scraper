@@ -212,28 +212,29 @@ def scrape(
     listings: list[dict] = []
     anomalies: list[str] = []
 
-    # --- Phase A: Binary search + parallel fetch ---
-    # Step 1: Binary search to find last real page
-    lo, hi = 1, 200
-    last_valid_page = 1
-    while lo <= hi:
-        mid = (lo + hi) // 2
-        html = fetch_page(_page_url(mid))
-        if html and _parse_search_page(html):
-            last_valid_page = mid
-            lo = mid + 1
-        else:
-            hi = mid - 1
+    # --- Phase A: Discover last page + parallel fetch ---
+    # Step 1: Request page=9999 to discover the real last page
+    # The server redirects to the last valid page; pagination shows the number
+    html = fetch_page(_page_url(9999))
+    last_page = 1
+    if html:
+        soup = BeautifulSoup(html, "lxml")
+        current_el = soup.select_one(".current, .pager-position.current, li.current")
+        if current_el:
+            text = current_el.get_text(strip=True)
+            if text.isdecimal():
+                last_page = int(text)
+    if last_page <= 1:
+        last_page = 1  # fallback
 
-    total_pages = last_valid_page
     if max_pages is not None:
-        total_pages = min(total_pages, max_pages)
+        last_page = min(last_page, max_pages)
 
     if verbose:
-        logger.info("ASF: %d search pages found, fetching in parallel...", total_pages)
+        logger.info("ASF: %d search pages — fetching in parallel...", last_page)
 
     # Step 2: Generate all page URLs and bulk_fetch in parallel
-    page_urls = [_page_url(p) for p in range(1, total_pages + 1)]
+    page_urls = [_page_url(p) for p in range(1, last_page + 1)]
     page_results = bulk_fetch(page_urls)
 
     # Step 3: Parse all pages
@@ -251,7 +252,7 @@ def scrape(
                         print(f"  [ANOMALY] {listing['id']} — {w}")
 
     if verbose:
-        logger.info("ASF Phase A: %d listings from %d pages", len(listings), total_pages)
+        logger.info("ASF Phase A: %d listings from %d pages", len(listings), last_page)
 
     if not listings:
         return []
