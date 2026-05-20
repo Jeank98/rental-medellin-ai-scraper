@@ -159,10 +159,17 @@ def _phase_b(listings: list[dict], verbose: bool = False) -> list[dict]:
     if not urls:
         return listings
 
-    if verbose:
+    if verbose or True:  # always show progress
         logger.info("ASF Phase B: fetching %d detail pages...", len(urls))
 
+    # Suppress Scrapling's per-request INFO logs during bulk fetch
+    import scrapling
+    old_level = logging.getLogger("scrapling").level
+    logging.getLogger("scrapling").setLevel(logging.WARNING)
+    
     results = bulk_fetch(urls)
+    
+    logging.getLogger("scrapling").setLevel(old_level)
     detail_map = dict(results)
 
     banos_set = 0

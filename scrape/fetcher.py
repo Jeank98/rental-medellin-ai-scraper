@@ -21,7 +21,7 @@ _MAX_RETRIES = 3  # number of retry attempts (4 total with initial)
 _RETRY_DELAYS = [1, 2, 4]  # seconds between retries
 _TIMEOUT = 30  # seconds per request attempt
 _BULK_CHUNK_SIZE = 200
-_MAX_BULK_WORKERS = 10
+_MAX_BULK_WORKERS = 20
 
 
 def fetch_page(url: str, method: str = "get") -> Optional[str]:
