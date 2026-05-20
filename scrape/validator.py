@@ -65,8 +65,10 @@ def validate(listing: dict) -> list[str]:
     if tipo.lower() not in STANDARD_TIPOS and tipo != '':
         warnings.append(f"tipo='{tipo}' non-standard")
 
-    if listing_id and '-' not in listing_id:
-        warnings.append(f"id='{listing_id}' invalid format")
+    if listing_id:
+        parts = listing_id.split('-', 1)
+        if len(parts) != 2 or not parts[1].isdigit():
+            warnings.append(f"id='{listing_id}' invalid format (expected XXX-NNNN)")
 
     if url and not url.startswith(('http://', 'https://')):
         warnings.append(f"url='{url}' invalid format")

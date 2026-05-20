@@ -8,6 +8,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from scrape.report import generate_report
 
@@ -159,6 +160,16 @@ def validate_results(scrape_results: list[dict], portals: dict) -> dict:
     return {"passed": passed, "warnings": warnings}
 
 
+def _clean_db_url(url: str) -> str:
+    """Remove channel_binding parameter for pg_dump compatibility."""
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query)
+    params.pop("channel_binding", None)
+    new_query = urlencode(params, doseq=True)
+    clean = parsed._replace(query=new_query)
+    return urlunparse(clean)
+
+
 def backup_db(backup_dir: str = "~/Projects/Backups") -> str | None:
     """Run pg_dump on the DATABASE_URL and save to backup_dir.
 
@@ -175,7 +186,7 @@ def backup_db(backup_dir: str = "~/Projects/Backups") -> str | None:
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     dump_file = backup_path / f"rental_scraper_{timestamp}.sql"
 
-    clean_url = db_url.replace("&channel_binding=require", "")
+    clean_url = _clean_db_url(db_url)
 
     try:
         subprocess.run(

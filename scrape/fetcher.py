@@ -42,6 +42,9 @@ def fetch_page(url: str, method: str = "get") -> Optional[str]:
 
 
             if resp.status >= 400:
+                if resp.status < 500:
+                    logger.warning("HTTP %s for %s — not retrying (client error)", resp.status, url)
+                    return None
                 logger.warning(
                     "HTTP %s for %s (attempt %d/%d)",
                     resp.status,
@@ -92,6 +95,9 @@ def fetch_json(
             resp = fetcher.get(url, timeout=_TIMEOUT, retries=1, **extras)
 
             if resp.status >= 400:
+                if resp.status < 500:
+                    logger.warning("HTTP %s for %s — not retrying (client error)", resp.status, url)
+                    return None
                 logger.warning(
                     "HTTP %s for %s (attempt %d/%d)",
                     resp.status,
@@ -103,13 +109,8 @@ def fetch_json(
                 data = resp.json()
                 if isinstance(data, (dict, list)):
                     return data
-                logger.warning(
-                    "Unexpected JSON type for %s: %s (attempt %d/%d)",
-                    url,
-                    type(data).__name__,
-                    attempt + 1,
-                    _MAX_RETRIES + 1,
-                )
+                logger.error("Unexpected JSON type for %s: %s — NOT retrying", url, type(data).__name__)
+                return None
 
         except Exception as e:
             logger.warning(

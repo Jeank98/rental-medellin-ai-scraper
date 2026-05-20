@@ -156,37 +156,60 @@ def _parse_article_text(text: str) -> dict[str, str]:
 # Phase B — Detail page extraction
 # ---------------------------------------------------------------------------
 import re as _re
+from html.parser import HTMLParser
 
-_HTML_TAG_RE = _re.compile(r"<[^>]+>")
-_SCRIPT_STYLE_RE = _re.compile(
-    r"<(script|style|noscript|iframe)[^>]*>.*?</\1>", _re.DOTALL | _re.IGNORECASE
-)
+
+class _TextExtractor(HTMLParser):
+    """Extract plain text from HTML, dropping script/style content."""
+
+    def __init__(self):
+        super().__init__()
+        self._text: list[str] = []
+        self._skip = False
+        self._skip_tag = ""
+
+    def handle_starttag(self, tag, attrs):
+        tag_lower = tag.lower()
+        if tag_lower in ("script", "style", "noscript", "iframe"):
+            self._skip = True
+            self._skip_tag = tag_lower
+        elif tag_lower in ("br",):
+            self._text.append("\n")
+        elif tag_lower in ("div", "p", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6",
+                           "article", "section", "dl", "dt", "dd"):
+            if self._text and self._text[-1] != "\n":
+                self._text.append("\n")
+
+    def handle_endtag(self, tag):
+        tag_lower = tag.lower()
+        if self._skip and tag_lower == self._skip_tag:
+            self._skip = False
+            self._skip_tag = ""
+        elif tag_lower in ("div", "p", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6",
+                           "article", "section", "dl", "dt", "dd"):
+            if self._text and self._text[-1] != "\n":
+                self._text.append("\n")
+
+    def handle_data(self, data):
+        if not self._skip:
+            self._text.append(data)
+
+    def get_text(self) -> str:
+        return "".join(self._text)
 
 
 def _html_to_text(html: str) -> str:
-    """Strip HTML tags and script/style blocks to get plain text.
-
-    This is data cleaning (removing markup), NOT field extraction.
-    The NO REGEX rule applies to field-level extraction — stripping
-    HTML tags is a standard data-cleaning operation.
-    """
-    # Remove script/style/noscript blocks first
-    text = _SCRIPT_STYLE_RE.sub("", html)
-    # Replace <br> and block elements with newlines for line separation
-    text = _re.sub(r"<br\s*/?>", "\n", text, flags=_re.IGNORECASE)
-    text = _re.sub(r"</?(div|p|li|tr|h\d|article|section|dl|dt|dd)[^>]*>", "\n", text, flags=_re.IGNORECASE)
-    # Strip remaining HTML tags
-    text = _HTML_TAG_RE.sub("", text)
-    # Decode HTML entities
+    """Strip HTML tags using stdlib HTMLParser to get plain text."""
+    extractor = _TextExtractor()
+    extractor.feed(html)
+    text = extractor.get_text()
     text = text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
     text = text.replace("&quot;", '"').replace("&#39;", "'").replace("&nbsp;", " ")
     text = text.replace("á", "á").replace("é", "é").replace("í", "í")
     text = text.replace("ó", "ó").replace("ú", "ú").replace("ñ", "ñ")
     text = text.replace("Á", "Á").replace("É", "É").replace("Í", "Í")
     text = text.replace("Ó", "Ó").replace("Ú", "Ú").replace("Ñ", "Ñ")
-    # Collapse multiple blank lines
-    text = _re.sub(r"\n\s*\n", "\n", text)
-    return text.strip()
+    return _re.sub(r"\n\s*\n", "\n", text).strip()
 
 
 def _extract_detail_fields(html: str) -> dict:

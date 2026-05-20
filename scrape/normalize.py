@@ -68,7 +68,7 @@ def normalize_price(raw) -> int:
     if 'consultar precio' in s.lower():
         return 0
     first = s.split('/')[0].strip()
-    digits = ''.join(c for c in first if c.isdigit())
+    digits = ''.join(c for c in first if c.isdecimal())
     if not digits:
         return 0
     return int(digits)
