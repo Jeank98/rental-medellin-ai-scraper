@@ -29,7 +29,7 @@ All 12 portals have standalone executable scripts at `scripts/scrape_{portal}.py
 | File | Purpose |
 |---|---|
 | **Scripts (primary production path)** | |
-| `scripts/run_all.py` | Orchestrator: runs all 12 scrapers with health check → parallel scrape → validation → DB backup → report |
+| `scripts/run_all.py` | Orchestrator: runs all 12 scrapers with health check → DB backup → parallel scrape → validation → report |
 | `scripts/scrape_{portal}.py` × 12 | Per-portal CLI entry points (thin wrappers calling `scrape/{portal}.py`) |
 | `scrape/orchestrator.py` | Pipeline logic: health checks, parallel execution, backup, reporting |
 | `scrape/report.py` | Report formatting for the orchestrator |
