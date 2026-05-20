@@ -11,10 +11,10 @@ Discovered field-to-column mappings for each scraped portal. Each portal has its
 | Alberto Alvarez | `AAL` | [albertoalvarez.md](portals/albertoalvarez.md) | Single-phase | ✅ Done |
 | Metrocasas | `MTC` | [metrocasas.md](portals/metrocasas.md) | Single-phase | ✅ Done |
 | Santillana | `STL` | [santillana.md](portals/santillana.md) | Two-phase (detail pages) | ✅ Done |
-| Coninsa | `CON` | [coninsa.md](portals/coninsa.md) | Single-phase + Load More | ✅ Done |
+| Coninsa | `CON` | [coninsa.md](portals/coninsa.md) | GraphQL API | ✅ Done |
 | Merino Hermanos | `MHR` | [merinohermanos.md](portals/merinohermanos.md) | Single-phase | ✅ Done |
-| Arrendamientos del Norte | `ADN` | [arrendamientosdelnorte.md](portals/arrendamientosdelnorte.md) | Single-phase | ✅ Done |
-| Villa Cruz | `AVC` | [arrendamientosvillacruz.md](portals/arrendamientosvillacruz.md) | Single-phase + Load More | ✅ Done |
-| Alnago | `ALN` | [alnago.md](portals/alnago.md) | Single-phase | ✅ Done |
+| Arrendamientos del Norte | `ADN` | [arrendamientosdelnorte.md](portals/arrendamientosdelnorte.md) | REST API | ✅ Done |
+| Villa Cruz | `AVC` | [arrendamientosvillacruz.md](portals/arrendamientosvillacruz.md) | Load More (JS) | ✅ Done |
+| Alnago | `ALN` | [alnago.md](portals/alnago.md) | Two-phase (homepage→detail) | ✅ Done |
 | Habitamos | `HBM` | [habitamos.md](portals/habitamos.md) | Single-phase | ✅ Done |
 | Monserrate | `MNS` | [arrendamientosmonserrate.md](portals/arrendamientosmonserrate.md) | Two-phase (detail pages) | ✅ Done |

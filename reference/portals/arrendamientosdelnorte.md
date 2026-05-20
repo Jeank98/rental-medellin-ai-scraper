@@ -26,3 +26,11 @@
 - `tipo=casa` returns mixed tipos (Casa + Casa-Finca + Casa-local) — post-filter
 - Banos, parking, estrato available in single-property detail endpoint (`/inmueble?codigo=xxx`) but not in search
 - Three tipos must be scraped separately: apartamento, casa, apartaestudio
+
+## Zero Genuineness
+
+| Field | Default 0 | Status |
+|-------|-----------|--------|
+| `banos` | 0 | ✅ Genuine — Not in search API (detail endpoint has them but search doesn't) |
+| `parqueaderos` | 0 | ✅ Genuine — Not in search API (detail endpoint has them but search doesn't) |
+| `estrato` | 0 | ✅ Genuine — Not in search API (detail endpoint has them but search doesn't) |

@@ -1,15 +1,46 @@
 # AGENTS.md — Rental Medellín AI Scraper
 
-This project is a **knowledge base + tooling** for AI agents that scrape real estate rental listings from Colombian portals. It contains reference documentation, database integration, and Scrapling MCP configuration.
+This project is a **knowledge base + tooling** for scraping real estate rental listings from Colombian portals. It provides 12 per-portal executable Python scripts (powered by a shared `scrape/` package), plus AI-agent reference documentation for portal discovery and field mapping.
 
 ## What every agent working with this project must know
 
 ### Project purpose
-Scrape rental property listings from any Colombian real estate portal, extract standardized fields, and output listings as a typed CSV or to a PostgreSQL database. The agent must discover page structure dynamically — no hardcoded selectors.
+Scrape rental property listings from any Colombian real estate portal, extract standardized fields, and output listings as a typed CSV or to a PostgreSQL database. **Scripts are the PRIMARY production path** — the agentic workflow exists as a fallback and for documenting new portal structures.
+
+### Production: scripts first, agents second
+All 12 portals have standalone executable scripts at `scripts/scrape_{portal}.py`. These call into a shared `scrape/{portal}.py` module and use `scrape/cli.py` for standardized CLI behavior (`--output csv|db|both`, `--ciudad`, `--sample-only`, `--max-pages`, `--verbose`).
+
+**When a portal has a working script, ALWAYS use the script.** The agentic workflow (Scrapling MCP tools + agent reasoning) is reserved for:
+- Discovering a brand-new portal not yet in the codebase
+- Debugging a script that broke after a site redesign
+- Updating field mappings in `reference/portals/{name}.md`
+
+### Strategy types (12 portals)
+
+| Strategy | Count | Portals |
+|---|---|---|
+| REST API | 1 | ADN (Arrendamientos del Norte) |
+| GraphQL | 1 | Coninsa |
+| Single-phase HTML | 5 | Maxibienes, AlbertoAlvarez, MerinoHermanos, Habitamos, Metrocasas |
+| Two-phase HTML | 4 | SantaFe, Santillana, Alnago, Monserrate |
+| Load More (JS) | 1 | VillaCruz |
 
 ### Key files
 | File | Purpose |
 |---|---|
+| **Scripts (primary production path)** | |
+| `scripts/run_all.py` | Orchestrator: runs all 12 scrapers with health check → parallel scrape → validation → DB backup → report |
+| `scripts/scrape_{portal}.py` × 12 | Per-portal CLI entry points (thin wrappers calling `scrape/{portal}.py`) |
+| `scrape/orchestrator.py` | Pipeline logic: health checks, parallel execution, backup, reporting |
+| `scrape/report.py` | Report formatting for the orchestrator |
+| `scrape/cli.py` | Shared CLI factory (`create_parser` / `run_scraper`) for all portal scripts |
+| `scrape/{portal}.py` × 12 | Per-portal scraper logic (extraction, pagination, normalization) |
+| `scrape/fetcher.py` | HTTP fetch utilities (requests, aiohttp, Scrapling, Playwright) |
+| `scrape/normalize.py` | Normalization functions (precio, tipo, estrato, garaje, barrio, URL) |
+| `scrape/validator.py` | Anomaly detection and validation |
+| `scrape/csv_writer.py` | CSV output writer |
+| `scrape/db_writer.py` | PostgreSQL insert/upsert writer |
+| **Agentic reference docs (fallback + documentation)** | |
 | `skills/real-estate-scraper/SKILL.md` | The page-agnostic scraping skill — load this first |
 | `docs/columns-spec.md` | Exact column definitions, types, and normalization rules |
 | `docs/variable-detection.md` | How to detect each field in unfamiliar HTML |
@@ -21,7 +52,44 @@ Scrape rental property listings from any Colombian real estate portal, extract s
 | `db/__init__.py` | PostgreSQL connection, table schema, insert operations |
 | `scripts/insert_listings.py` | Bulk insert listings from JSON into PostgreSQL |
 
+### Running all portals at once
+
+```
+uv run python scripts/run_all.py --workers 12
+```
+
+Options:
+- `--workers N` — concurrent scrapers (default 4, max 12 for full parallel)
+- `--ciudad` — city filter (default `medellin`)
+- `--skip-backup` — skip pg_dump before scraping
+- `--skip-health` — skip health check (run all scrapers regardless)
+- `--verbose` — detailed logging
+
+### Running a single portal
+
+```
+uv run python scripts/scrape_asf.py              # scrape Santa Fe (default: csv + db)
+uv run python scripts/scrape_asf.py --output csv  # CSV only
+uv run python scripts/scrape_asf.py --output db   # DB only
+uv run python scripts/scrape_asf.py --sample-only # validate 1-3 pages, print summary, exit
+uv run python scripts/scrape_asf.py --max-pages 3 # limit pages for testing
+```
+
+All portal scripts share these flags.
+
 ### Workflow for scraping a new portal
+
+**Production path (new script):**
+1. Study the portal in a browser to understand its structure
+2. Check `reference/portal-field-mappings.md` — if portal exists, load `reference/portals/{name}.md`
+3. Determine the strategy type (REST API, GraphQL, single-phase HTML, two-phase HTML, Load More)
+4. Write `scrape/{name}.py` — the scraper module using `scrape.fetcher`, `scrape.normalize`, `scrape.validator`
+5. Write `scripts/scrape_{name}.py` — thin CLI entry point using `scrape.cli.create_parser` and `scrape.cli.run_scraper`
+6. Register the portal in `scrape/orchestrator.py` → `PORTALS` dict
+7. Test with `--sample-only`, then full scrape; verify output matches `docs/columns-spec.md`
+8. Report discovered field mappings to `reference/portals/{name}.md`
+
+**Agentic fallback (documentation only):**
 1. Load `skills/real-estate-scraper/SKILL.md`
 2. **CHECK `reference/portal-field-mappings.md` FIRST** — if portal exists, load its individual file from `reference/portals/{name}.md`. This gives you the card selector, pagination pattern, known field mappings, and portal-specific gotchas. Skip Phase 1 Discovery — go straight to bulk scrape.
 3. If portal is NOT in the index, follow the full 4-phase workflow: Discovery → Bulk Scrape → Save (CSV or DB) → Report
@@ -49,6 +117,19 @@ This makes repeat scrapes instant — no Phase 1 needed for known portals.
 - `id` format: `{PREFIX}-{CODE}`
 - `tipo` normalized to lowercase: `apartamento`, `casa`, `apartaestudio`
 - Output goes to CSV (`results/{portal}_arriendos_{ciudad}.csv`) or PostgreSQL (`DATABASE_URL` in `.env`); ask user per scrape
+
+### Zero-genuineness — when 0 means "not available"
+
+Some portals do not expose certain fields at all. A `0` for these fields is correct and expected — not a bug:
+
+| Portal | Genuinely absent fields (always 0) |
+|---|---|
+| ADN (REST API) | `banos`, `parqueaderos`, `estrato` |
+| Habitamos | `area`, `estrato` |
+| Monserrate | `area` (detail page only) |
+| Coninsa (GraphQL) | `area` (not in the API response) |
+
+Do NOT flag these as anomalies. The validator in `scrape/validator.py` accounts for per-portal genuine zeros.
 
 ### Tool requirements
 - Scrapling MCP must be configured in opencode.json (Docker: `pyd4vinci/scrapling`) — see `config/scrapling-mcp-setup.md`

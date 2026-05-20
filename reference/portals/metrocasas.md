@@ -2,7 +2,8 @@
 
 - **URL**: `https://metrocasas.co/new/property-search/?status=para-alquiler&type[]=apartaestudio&type[]=apartamento&type[]=casa&location[]=medellin`
 - **Type**: JS-rendered WordPress (RealHomes theme)
-- **Listing card**: No reliable CSS selector (use `data-property-title` attrs)
+- **Listing card**: `article.rh_list_card` — each card uses `data-property-id` and `data-property-title` attrs
+- **Regex patterns**: Field extraction uses `r'Área\s+(\d+)'`, `r'Habitaciones\s+(\d+)'`, etc. — no colons required after field labels
 - **Listings per page**: 6
 - **Total pages**: Discovered via pagination links (`/page/N/`)
 - **Pagination**: `/page/N/?query...`

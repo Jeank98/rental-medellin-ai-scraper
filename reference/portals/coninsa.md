@@ -1,63 +1,86 @@
 # Coninsa (`CON`)
 
 - **URL**: `https://www.coninsa.co/arrendamientos/vivienda/?text=Medellin`
-- **Type**: JS-rendered SPA (Gatsby + Drupal)
-- **Listing card**: No CSS selector — listings load via client-side JS
-- **Listings per page**: 12 (infinite scroll via "Cargar más" button)
-- **Total pages**: Infinite scroll — "Cargar más inmuebles" button, ~14 clicks to exhaust
-- **Pagination**: "Cargar más inmuebles" button — React state update, no URL parameter
-- **Key feature**: **Needs Python API fallback for click automation** (MCP doesn't expose `page_action`)
+- **Type**: Gatsby SPA with Drupal GraphQL backend
+- **Scraping method**: Direct GraphQL API (Search API), no browser needed
+- **GraphQL endpoint**: `https://admindrupal.coninsa.co/graphql`
+- **Search index**: `search_properties`
+- **Listings per request**: Up to 200 (configurable, tested limit)
+- **Pagination**: Offset-based via `range: {offset, limit}`
 
 ## Scraping Strategy
 
-**MCP alone insufficient** — `scrapling_fetch` renders initial 12 listings but can't click "Cargar más".
-
-**Required approach:**
-1. Use Python API `StealthyFetcher.fetch()` with `page_action` callback
-2. In `page_action`, click "Cargar más inmuebles" repeatedly until button disappears
-3. Extract all rendered text
+**Direct GraphQL — no browser required.** The frontend is a Gatsby SPA that renders listings client-side, but the data comes from a Drupal Search API GraphQL endpoint. Query it directly with POST requests.
 
 ```python
-from scrapling import StealthyFetcher
-from playwright.sync_api import Page
+import scrapling
 
-def click_load_more(page: Page):
-    last = page.locator('text=Código:').count()
-    while True:
-        btn = page.locator('text=Cargar más inmuebles')
-        if btn.count() == 0 or not btn.first.is_visible():
-            break  # button gone
-        btn.first.click()
-        page.wait_for_timeout(2000)
-        current = page.locator('text=Código:').count()
-        if current == last: break  # count stabilized — no new listings
-        last = current
-
-resp = StealthyFetcher.fetch(url, page_action=click_load_more, headless=True)
-text = resp.get_all_text()
+f = scrapling.Fetcher()
+query = """query SearchProperties($offset: Int!, $limit: Int!) {
+  searchAPISearch(
+    index_id: "search_properties",
+    fulltext: {keys: "Medellin"},
+    conditions: [
+      {name: "field_service_type", value: "AR", operator: "EQUAL"}
+    ],
+    range: {offset: $offset, limit: $limit}
+  ) {
+    result_count
+    documents {
+      ... on SearchPropertiesDoc {
+        code
+        property_type
+        field_lease_value
+        field_area
+        field_bedrooms
+        field_bathrooms
+        field_garages
+        field_stratum
+        neighborhood
+        url
+      }
+    }
+  }
+}"""
+resp = f.post("https://admindrupal.coninsa.co/graphql", json={"query": query, "variables": {"offset": 0, "limit": 200}})
 ```
-Stops when button disappears OR listing count stops growing. Never hardcodes a click limit.
 
-**Why Python API:** Scrapling's MCP server does not expose `page_action`. For portals requiring button clicks, use the Python API directly. This is the documented fallback when MCP tool limitations are hit.
+### Key query parameters
+- `index_id`: `"search_properties"` — the Search API index for property listings
+- `fulltext: {keys: "Medellin"}` — full-text search for Medellín
+- `conditions: [{name: "field_service_type", value: "AR", operator: "EQUAL"}]` — filter to Arriendo only (AR = rental, CO = corretaje/sale)
+- `range: {offset, limit}` — pagination, max 200 per page
+
+### Why old approach (StealthyFetcher + click) failed
+The Gatsby SPA loads listing data at runtime via GraphQL. Rendered HTML text saw empty cards because the data is injected client-side. StealthyFetcher with page_action could click "Cargar más" but still never got listings into the HTML text. Direct GraphQL API solves this completely.
 
 ## Field Mappings
 
 | Column | Source | Pattern |
 |--------|--------|---------|
-| `id` | `CON-{code}` | `Código: 60565` in text |
+| `id` | `CON-{code}` | `code` field from SearchPropertiesDoc |
 | `portal` | `coninsa` | Fixed |
-| `tipo` | Title line before `en arriendo` | `Apartamento` → `apartamento` |
-| `precio` | `$` line | `$5.400.000` → `5400000` |
-| `area` | `m²` line | `133 m²` → `133` |
-| `habitaciones` | Numeric line before code (pos 0) | Reversed order: ba, hab, pq |
-| `banos` | Numeric line before code (pos 1) | |
-| `parqueaderos` | Numeric line before code (pos 2) | |
-| `estrato` | **Not in listing** | → `0` |
-| `barrio` | Last segment of title after commas | `EL POBLADO` → `El Poblado` |
-| `url` | Constructed from code | `https://www.coninsa.co/arrendamientos/vivienda/inmueble/{code}/` |
+| `tipo` | `property_type` | `Apartamento` → `apartamento`, `Casa` → `casa`, `Casa finca` → `casa` |
+| `precio` | `field_lease_value` | Integer, 0 when not rental |
+| `area` | `field_area` | Float → int |
+| `habitaciones` | `field_bedrooms` | Integer |
+| `banos` | `field_bathrooms` | Integer |
+| `parqueaderos` | `field_garages` | Integer |
+| `estrato` | `field_stratum` | Integer 1-6 |
+| `barrio` | `neighborhood` | Title-cased via `normalize_barrio()` |
+| `url` | `url` field | Relative path, prefixed with `https://www.coninsa.co` |
 
-**Notes**:
-- Full scrape requires browser + click automation (repeated clicks on "Cargar más")
-- `scrapling_fetch` (MCP browser) renders initial batch — use for discovery only
-- Property types: apartamento, casa, finca
-- Listings span multiple cities — filter by barrio for Medellín-specific
+### Residential filter
+Only keep `property_type` in: `Apartamento`, `Casa`, `Casa finca`. Exclude: `Local`, `Oficina`, `Bodega`, `Consultorio`, `Por definir`.
+
+### Data volume
+- ~327 total AR (rental) listings in Medellín across all property types
+- ~199 residential (Apartamento + Casa) after filtering
+- 2 GraphQL API calls needed (offset 0 + offset 200 with limit 200)
+
+## Notes
+- **No browser needed** — pure HTTP POST to GraphQL endpoint
+- **No rate limiting observed** — consecutive requests return 200 OK
+- **Introspection enabled** — schema can be explored with introspection queries
+- `field_service_type` values: `"AR"` (Arriendo/rental), `"CO"` (Corretaje/sale)
+- Property types found: Apartamento, Casa, Casa finca, Local, Oficina, Bodega, Consultorio, Por definir
