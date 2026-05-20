@@ -101,7 +101,10 @@ def _extract_listing(card) -> dict:
         if field is None:
             continue
         text = li.get_text(strip=True)
-        digits = ''.join(c for c in text if c.isdigit())
+        # For area, split on 'm' first to avoid capturing "m2" suffix
+        if field == 'area':
+            text = text.split('m')[0].strip()
+        digits = ''.join(c for c in text if c.isdecimal())
         if digits:
             listing[field] = int(digits)
 

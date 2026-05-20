@@ -73,11 +73,13 @@ def _extract_card(card) -> dict:
     if precio_div:
         listing["precio"] = normalize_price(precio_div.get_text(strip=True))
 
-    # Area: span.area → "55m²"
+    # Area: span.area → "55m²" or "55m2"
     area_span = card.select_one("span.area")
     if area_span:
         text = area_span.get_text(strip=True)
-        digits = "".join(c for c in text if c.isdigit())
+        # Extract digits before 'm' (handles both "55m²" and "55m2")
+        digits = text.split('m')[0].strip()
+        digits = ''.join(c for c in digits if c.isdecimal())
         if digits:
             listing["area"] = int(digits)
 
@@ -85,7 +87,7 @@ def _extract_card(card) -> dict:
     hab_span = card.select_one("span.alcobas")
     if hab_span:
         text = hab_span.get_text(strip=True)
-        digits = "".join(c for c in text if c.isdigit())
+        digits = "".join(c for c in text if c.isdecimal())
         if digits:
             listing["habitaciones"] = int(digits)
 
@@ -93,7 +95,7 @@ def _extract_card(card) -> dict:
     gar_span = card.select_one("span.garaje")
     if gar_span:
         text = gar_span.get_text(strip=True)
-        digits = "".join(c for c in text if c.isdigit())
+        digits = "".join(c for c in text if c.isdecimal())
         if digits:
             listing["parqueaderos"] = int(digits)
 
