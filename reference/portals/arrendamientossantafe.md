@@ -5,9 +5,9 @@
 - **Listing card**: `.property-card`
 - **Detail page**: `/propiedad/{CODE}/` — server-rendered, no JS required
 - **Listings per page**: 12
-- **Total pages**: Discovered via binary search with stale-card detection — pages beyond last valid serve placeholder listing (REF: A9692)
+- **Total pages**: Discovered via `?page=9999` trick — server redirects to last real page (94). Pagination element `.current` shows the number.
 - **Pagination**: `?page=N&bussines_type=Arrendar`
-- **Pagination discovery**: binary search with stale-card detection — pages beyond 94 serve placeholder listing (REF: A9692)
+- **Pagination discovery**: Request page=9999, extract last page number from `.current` element. Then parallel `bulk_fetch` all pages with 20 workers.
 - **Key feature**: **Card fields incomplete — requires two-phase scrape** (verified 2026-05-19)
 
 ### Phase A — Listing cards (search pages)

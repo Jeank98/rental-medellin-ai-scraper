@@ -25,6 +25,22 @@ All 12 portals have standalone executable scripts at `scripts/scrape_{portal}.py
 | Two-phase HTML | 4 | SantaFe, Santillana, Alnago, Monserrate |
 | Load More (JS) | 1 | VillaCruz |
 
+**Per-portal ID formats** (each portal uses its own ID scheme):
+| Portal | Prefix | ID Format | Example |
+|--------|--------|-----------|---------|
+| Maxibienes | MXB | MXB-{numeric} | MXB-12345 |
+| AlbertoAlvarez | AAL | AAL-AA-{numeric} | AAL-AA-92955 |
+| Alnago | ALN | ALN-{numeric} | ALN-9999658 |
+| ADN | ADN | ADN-{numeric} | ADN-9112 |
+| Monserrate | MNS | MNS-{numeric} | MNS-39733 |
+| SantaFe | ASF | ASF-{code} | ASF-A11636 |
+| VillaCruz | AVC | AVC-{numeric} | AVC-8777 |
+| Coninsa | CON | CON-{numeric} | CON-60565 |
+| Habitamos | HBM | HBM-{numeric} | HBM-5382 |
+| MerinoHermanos | MHR | MHR-{numeric} | MHR-6394 |
+| Metrocasas | MTC | MTC-{numeric} | MTC-118440 |
+| Santillana | STL | STL-{numeric} | STL-12345 |
+
 ### Key files
 | File | Purpose |
 |---|---|
