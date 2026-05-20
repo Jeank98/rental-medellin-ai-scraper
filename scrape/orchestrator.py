@@ -55,17 +55,25 @@ def _parse_listing_count(output: str) -> int:
     return 0
 
 
-def health_check(portals: dict, timeout: int = 300) -> list[dict]:
+def health_check(portals: dict, timeout: int = 300, verbose: bool = True) -> list[dict]:
     """Run each scraper in sample-only mode to verify it works.
 
     All scrapers run in parallel via ThreadPoolExecutor.
+    Prints progress to stdout as each portal completes.
     Returns list of {portal, healthy, listings, elapsed, error}.
     """
     results: list[dict] = []
     portal_keys = list(portals.keys())
 
+    if verbose:
+        print(f"\n{'='*50}")
+        print(f"  HEALTH CHECK — {len(portal_keys)} portals")
+        print(f"{'='*50}")
+
     def _check(portal: str) -> dict:
         script = _script_name(portal)
+        if verbose:
+            print(f"  ⏳ {portal:30s} checking...", end="", flush=True)
         start = time.monotonic()
         try:
             proc = subprocess.run(
@@ -78,15 +86,25 @@ def health_check(portals: dict, timeout: int = 300) -> list[dict]:
             listings = _parse_listing_count(proc.stdout)
             if proc.returncode != 0:
                 error_msg = proc.stderr[:200].strip() if proc.stderr else f"exit code {proc.returncode}"
+                if verbose:
+                    print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s) — {error_msg[:60]}")
                 return {"portal": portal, "healthy": False, "listings": listings, "elapsed": elapsed, "error": error_msg}
             if listings == 0:
+                if verbose:
+                    print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s) — 0 listings")
                 return {"portal": portal, "healthy": False, "listings": 0, "elapsed": elapsed, "error": "0 listings returned"}
+            if verbose:
+                print(f"\r  ✅ {portal:30s} {listings:>4d} listings ({elapsed:.1f}s)")
             return {"portal": portal, "healthy": True, "listings": listings, "elapsed": elapsed, "error": None}
         except subprocess.TimeoutExpired:
             elapsed = time.monotonic() - start
+            if verbose:
+                print(f"\r  ❌ {portal:30s} TIMEOUT ({elapsed:.1f}s)")
             return {"portal": portal, "healthy": False, "listings": 0, "elapsed": elapsed, "error": "timeout"}
         except Exception as e:
             elapsed = time.monotonic() - start
+            if verbose:
+                print(f"\r  ❌ {portal:30s} ERROR ({elapsed:.1f}s)")
             return {"portal": portal, "healthy": False, "listings": 0, "elapsed": elapsed, "error": str(e)[:200]}
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(portal_keys)) as executor:
@@ -94,20 +112,30 @@ def health_check(portals: dict, timeout: int = 300) -> list[dict]:
         for future in concurrent.futures.as_completed(futures):
             results.append(future.result())
 
+    if verbose:
+        healthy = sum(1 for r in results if r["healthy"])
+        print(f"  ── {healthy}/{len(results)} healthy\n")
     return results
 
 
-def parallel_scrape(portal_keys: list[str], workers: int = 4, ciudad: str = "medellin") -> list[dict]:
+def parallel_scrape(portal_keys: list[str], workers: int = 4, ciudad: str = "medellin", verbose: bool = True) -> list[dict]:
     """Run full scrapes for the given portals in parallel.
 
     Each scraper writes directly to the database via --output db.
-    Uses ThreadPoolExecutor(max_workers=workers) for concurrency.
+    Prints progress to stdout as each portal completes.
     Returns list of {portal, success, listings, elapsed, error}.
     """
     results: list[dict] = []
 
+    if verbose:
+        print(f"\n{'='*50}")
+        print(f"  PARALLEL SCRAPE — {len(portal_keys)} portals ({workers} workers)")
+        print(f"{'='*50}")
+
     def _scrape(portal: str) -> dict:
         script = _script_name(portal)
+        if verbose:
+            print(f"  ⏳ {portal:30s} scraping...", end="", flush=True)
         start = time.monotonic()
         try:
             proc = subprocess.run(
@@ -120,13 +148,21 @@ def parallel_scrape(portal_keys: list[str], workers: int = 4, ciudad: str = "med
             listings = _parse_listing_count(proc.stdout)
             if proc.returncode != 0:
                 error_msg = proc.stderr[:200].strip() if proc.stderr else f"exit code {proc.returncode}"
+                if verbose:
+                    print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s) — {error_msg[:60]}")
                 return {"portal": portal, "success": False, "listings": listings, "elapsed": elapsed, "error": error_msg}
+            if verbose:
+                print(f"\r  ✅ {portal:30s} {listings:>5d} listings ({_fmt_time(elapsed)})")
             return {"portal": portal, "success": True, "listings": listings, "elapsed": elapsed, "error": None}
         except subprocess.TimeoutExpired:
             elapsed = time.monotonic() - start
+            if verbose:
+                print(f"\r  ❌ {portal:30s} TIMEOUT ({elapsed:.1f}s)")
             return {"portal": portal, "success": False, "listings": 0, "elapsed": elapsed, "error": "timeout"}
         except Exception as e:
             elapsed = time.monotonic() - start
+            if verbose:
+                print(f"\r  ❌ {portal:30s} ERROR ({elapsed:.1f}s)")
             return {"portal": portal, "success": False, "listings": 0, "elapsed": elapsed, "error": str(e)[:200]}
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
@@ -134,6 +170,9 @@ def parallel_scrape(portal_keys: list[str], workers: int = 4, ciudad: str = "med
         for future in concurrent.futures.as_completed(futures):
             results.append(future.result())
 
+    if verbose:
+        successful = sum(1 for r in results if r["success"])
+        print(f"  ── {successful}/{len(results)} successful\n")
     return results
 
 
@@ -170,7 +209,16 @@ def _clean_db_url(url: str) -> str:
     return urlunparse(clean)
 
 
-def backup_db(backup_dir: str = "~/Projects/Backups") -> str | None:
+def _fmt_time(seconds: float) -> str:
+    """Format seconds as human-readable string."""
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    mins = int(seconds // 60)
+    secs = int(seconds % 60)
+    return f"{mins}m {secs}s"
+
+
+def backup_db(backup_dir: str = "~/Projects/Backups", verbose: bool = True) -> str | None:
     """Run pg_dump on the DATABASE_URL and save to backup_dir.
 
     Strips &channel_binding=require for pg_dump compatibility.
@@ -188,6 +236,11 @@ def backup_db(backup_dir: str = "~/Projects/Backups") -> str | None:
 
     clean_url = _clean_db_url(db_url)
 
+    if verbose:
+        print(f"\n{'='*50}")
+        print(f"  DB BACKUP → {dump_file}")
+        print(f"{'='*50}")
+
     try:
         subprocess.run(
             ["pg_dump", clean_url, "--no-owner", "--no-acl", "-f", str(dump_file)],
@@ -196,8 +249,13 @@ def backup_db(backup_dir: str = "~/Projects/Backups") -> str | None:
             timeout=300,
             check=True,
         )
+        file_size = dump_file.stat().st_size
+        if verbose:
+            print(f"  ✅ Backup complete — {file_size / 1024:.0f} KB\n")
         return str(dump_file)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
+        if verbose:
+            print(f"  ❌ Backup FAILED — {e}\n")
         return None
 
 
@@ -213,30 +271,45 @@ def run_pipeline(
     """
     start = time.monotonic()
 
+    print(f"\n{'='*50}")
+    print(f"  SCRAPER ORCHESTRATOR")
+    print(f"  {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  Workers: {workers} | Ciudad: {ciudad}")
+    print(f"{'='*50}")
+
     # Phase 1: Health check
     health_results: list[dict] = []
     if skip_health:
+        print("\n  ⏩ Health check SKIPPED\n")
         for portal in PORTALS:
             health_results.append({
                 "portal": portal, "healthy": True,
                 "listings": 0, "elapsed": 0.0, "error": None,
             })
     else:
-        health_results = health_check(PORTALS)
+        health_results = health_check(PORTALS, verbose=True)
 
     # Phase 2: Backup OLD state BEFORE scraping
     backup_path: str | None = None
     if not skip_backup:
-        backup_path = backup_db()
+        backup_path = backup_db(verbose=True)
 
     # Phase 3: Parallel scrape — only healthy portals
     healthy_portals = [r["portal"] for r in health_results if r.get("healthy", False)]
     scrape_results: list[dict] = []
     if healthy_portals:
-        scrape_results = parallel_scrape(healthy_portals, workers=workers, ciudad=ciudad)
+        scrape_results = parallel_scrape(healthy_portals, workers=workers, ciudad=ciudad, verbose=True)
+    else:
+        print("\n  ⚠️  No healthy portals to scrape\n")
 
     # Phase 4: Validation
     validation = validate_results(scrape_results, PORTALS)
+    if validation["warnings"]:
+        print(f"\n  ⚠️  Validation warnings:")
+        for w in validation["warnings"]:
+            print(f"     {w}")
+    else:
+        print(f"\n  ✅ Validation: PASSED")
 
     # Phase 5: Report
     total_time = time.monotonic() - start
