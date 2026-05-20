@@ -207,7 +207,7 @@ def run_pipeline(
     skip_backup: bool = False,
     skip_health: bool = False,
 ) -> int:
-    """Run the full 5-phase pipeline.
+    """Run the full 5-phase pipeline: health → backup → scrape → validate → report.
 
     Returns 0 on success, 1 if validation fails.
     """
@@ -224,19 +224,19 @@ def run_pipeline(
     else:
         health_results = health_check(PORTALS)
 
-    # Phase 2: Parallel scrape — only healthy portals
+    # Phase 2: Backup OLD state BEFORE scraping
+    backup_path: str | None = None
+    if not skip_backup:
+        backup_path = backup_db()
+
+    # Phase 3: Parallel scrape — only healthy portals
     healthy_portals = [r["portal"] for r in health_results if r.get("healthy", False)]
     scrape_results: list[dict] = []
     if healthy_portals:
         scrape_results = parallel_scrape(healthy_portals, workers=workers, ciudad=ciudad)
 
-    # Phase 3: Validation
+    # Phase 4: Validation
     validation = validate_results(scrape_results, PORTALS)
-
-    # Phase 4: Backup
-    backup_path: str | None = None
-    if not skip_backup:
-        backup_path = backup_db()
 
     # Phase 5: Report
     total_time = time.monotonic() - start
