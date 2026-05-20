@@ -23,6 +23,18 @@ _TIMEOUT = 30  # seconds per request attempt
 _BULK_CHUNK_SIZE = 200
 _MAX_BULK_WORKERS = 20
 
+# Reusable fetcher instance — creating a new Fetcher() per call is expensive
+# (fingerprint setup, TLS handshake regeneration)
+_fetcher = None
+
+
+def _get_fetcher():
+    """Return a cached Scrapling Fetcher instance."""
+    global _fetcher
+    if _fetcher is None:
+        _fetcher = scrapling.Fetcher()
+    return _fetcher
+
 
 def fetch_page(url: str, method: str = "get") -> Optional[str]:
     """Fetch a server-rendered page using Scrapling Fetcher.
@@ -34,12 +46,11 @@ def fetch_page(url: str, method: str = "get") -> Optional[str]:
     Returns:
         Page HTML content as string, or None if all retries are exhausted.
     """
-    fetcher = scrapling.Fetcher()
+    fetcher = _get_fetcher()
 
     for attempt in range(_MAX_RETRIES + 1):
         try:
             resp = fetcher.get(url, timeout=_TIMEOUT, retries=1)
-
 
             if resp.status >= 400:
                 if resp.status < 500:
@@ -85,7 +96,7 @@ def fetch_json(
     Returns:
         Parsed dict or list from JSON response, or None on failure.
     """
-    fetcher = scrapling.Fetcher()
+    fetcher = _get_fetcher()
     extras: dict[str, Any] = {}
     if headers:
         extras["headers"] = headers

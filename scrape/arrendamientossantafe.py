@@ -202,49 +202,45 @@ def scrape(
 ) -> list[dict]:
     """Scrape Arrendamientos SantaFe rental listings (two-phase).
 
-    Phase A: Paginate search result pages extracting 9 card-level fields.
+    Phase A: Binary-search last page, then bulk_fetch all search pages
+             in parallel (32 workers). Extracts 9 card-level fields.
     Phase B: bulk-fetch all detail pages for banos + estrato.
-
-    Args:
-        ciudad: City filter (default: medellin). Used for output naming.
-        sample_only: Limit to 3 pages if True, print summary.
-        max_pages: Explicit page limit.
-        verbose: Detailed extraction logging.
-
-    Returns:
-        List of standardized 11-column listing dicts.
     """
     if sample_only and max_pages is None:
         max_pages = 3
 
     listings: list[dict] = []
     anomalies: list[str] = []
-    page = 1
 
-    # --- Phase A: Search pages ---
-    while True:
-        if max_pages is not None and page > max_pages:
-            break
+    # --- Phase A: Binary search + parallel fetch ---
+    # Step 1: Binary search to find last real page
+    lo, hi = 1, 200
+    last_valid_page = 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        html = fetch_page(_page_url(mid))
+        if html and _parse_search_page(html):
+            last_valid_page = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
 
-        url = _page_url(page)
+    total_pages = last_valid_page
+    if max_pages is not None:
+        total_pages = min(total_pages, max_pages)
 
-        if verbose:
-            logger.info("ASF Phase A: page %d — %s", page, url)
+    if verbose:
+        logger.info("ASF: %d search pages found, fetching in parallel...", total_pages)
 
-        html = fetch_page(url)
+    # Step 2: Generate all page URLs and bulk_fetch in parallel
+    page_urls = [_page_url(p) for p in range(1, total_pages + 1)]
+    page_results = bulk_fetch(page_urls)
+
+    # Step 3: Parse all pages
+    for url, html in page_results:
         if not html:
-            logger.warning("ASF: failed to fetch page %d", page)
-            break
-
+            continue
         page_listings = _parse_search_page(html)
-        if not page_listings:
-            if verbose:
-                logger.info("ASF: no valid cards on page %d, stopping", page)
-            break
-
-        if verbose:
-            logger.info("ASF: page %d — %d listing(s)", page, len(page_listings))
-
         for listing in page_listings:
             listings.append(listing)
             warnings = validate(listing)
@@ -254,7 +250,8 @@ def scrape(
                     for w in warnings:
                         print(f"  [ANOMALY] {listing['id']} — {w}")
 
-        page += 1
+    if verbose:
+        logger.info("ASF Phase A: %d listings from %d pages", len(listings), total_pages)
 
     if not listings:
         return []
