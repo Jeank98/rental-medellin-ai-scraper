@@ -19,13 +19,17 @@
 | `parqueaderos` | **Not in card** | → `0` |
 | `estrato` | **Not in card** | → `0` |
 | `barrio` | `CIUDAD - BARRIO` line | Split on ` - `, take right |
-| `url` | Fixed search URL | `https://merinohermanos.com/inmuebles?b_type=arriendo` |
+| `url` | `<a href*="/ver_inmueble/?cod_=">` href | `https://merinohermanos.com/ver_inmueble/{tipo}_{ciudad}_{barrio}?cod_={code}` |
 
 **Notes**:
 - All fields text-labeled, no icon-only fields
 - Property types include compound: `Oficina-Consultorio`, `Casa-Finca`, `Casa-local`, `Oficina-Local`
 - Standard pagination via `?page=N` — MCP-native with `scrapling_bulk_get`
 - 30 listings per page, 8 pages for arriendo
+
+**Recent fixes (2026-06-01)**
+- URL field: now extracted from the card's `<a href*="/ver_inmueble/?cod_=">` link (per-listing detail page). Previously stored the search-page URL, breaking outbound links.
+- URL extraction is done by pre-scanning the page HTML for all `ver_inmueble/?cod_=NNNN` hrefs (each card has 3 — image, info block, ext-link) and looking up by `codigo` extracted from the card text.
 
 ## Zero Genuineness
 

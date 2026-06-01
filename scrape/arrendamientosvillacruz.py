@@ -22,15 +22,24 @@ _PORTAL = "arrendamientosvillacruz"
 
 
 def scroll_to_load_all(page):
-    """Scroll to bottom repeatedly until listing count stops growing."""
+    """Scroll to bottom repeatedly until listing count stops growing.
+
+    Uses 3s wait between scrolls to give Livewire enough time to fetch
+    each batch of cards. With the original 2s wait, only ~36 of 252
+    cards load before the count appears stable.
+    """
     last = page.locator("text=COD:").count()
+    pass_count = 0
     while True:
-        page.mouse.wheel(0, 3000)
-        page.wait_for_timeout(2000)
+        page.mouse.wheel(0, 5000)
+        page.wait_for_timeout(3000)
         current = page.locator("text=COD:").count()
+        pass_count += 1
         if current == last:
             break
         last = current
+        if pass_count > 30:
+            break
 
 
 def _parse_listings(resp) -> list[dict]:
@@ -63,6 +72,17 @@ def _parse_listings(resp) -> list[dict]:
             continue
         seen_ids.add(listing_id)
 
+        # Extract per-listing URL from the card's <a href*="/detalle-propiedad/">
+        # link. Each card has 2 such links (image + "Ver propiedad") that share
+        # the same href — first one wins. Fall back to the search page if the
+        # card has no detail link.
+        card_url = _URL
+        for el in card.css('a[href*="/detalle-propiedad/"]'):
+            href = el.attrib.get("href", "")
+            if href:
+                card_url = href
+                break
+
         listing = {
             "id": listing_id,
             "portal": _PORTAL,
@@ -74,7 +94,7 @@ def _parse_listings(resp) -> list[dict]:
             "parqueaderos": 0,
             "estrato": 0,
             "barrio": "",
-            "url": _URL,
+            "url": card_url,
         }
 
         for k, line in enumerate(lines):
@@ -138,7 +158,7 @@ def scrape(
         resp = fetcher.fetch(
             _URL,
             page_action=scroll_to_load_all,
-            timeout=30000,
+            timeout=90000,
             retries=1,
         )
     except Exception as e:

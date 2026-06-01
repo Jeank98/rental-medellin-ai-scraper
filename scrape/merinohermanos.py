@@ -16,6 +16,9 @@ _BASE_URL = "https://merinohermanos.com/inmuebles"
 
 _HTML_TAG_RE = re.compile(r'<[^>]+>')
 _WS_RE = re.compile(r' {2,}')
+_URL_RE = re.compile(
+    r'href="(https://merinohermanos\.com/ver_inmueble/[^"]+\?cod_=(\d+))"'
+)
 
 _BLOCK_TAGS = [
     '</div>', '</p>', '</section>', '</article>',
@@ -32,6 +35,20 @@ def _html_to_text(html: str) -> str:
     text = _WS_RE.sub(' ', text)
     text = _html_module.unescape(text)
     return text
+
+
+def _extract_urls_by_code(html: str) -> dict[str, str]:
+    """Build {code: detail_url} from the page HTML.
+
+    Each card has 3 links to the same /ver_inmueble/.../?cod_=NNNN URL
+    (image, info block, ext-link). The first occurrence per code wins.
+    """
+    out: dict[str, str] = {}
+    for m in _URL_RE.finditer(html):
+        url, code = m.group(1), m.group(2)
+        if code not in out:
+            out[code] = url
+    return out
 
 
 def _find_listing_cards(text: str) -> list[list[str]]:
@@ -60,11 +77,15 @@ def _find_listing_cards(text: str) -> list[list[str]]:
     return cards
 
 
-def _extract_card(lines: list[str]) -> dict | None:
+def _extract_card(lines: list[str], urls_by_code: dict[str, str]) -> dict | None:
     """Extract listing fields from a single card's text lines.
 
     Actual card layout observed: precio -> tipo -> codigo -> barrio -> banos -> alcobas -> area
     Fields are matched by keyword, not by line position.
+
+    The per-listing URL is looked up by code from the pre-extracted
+    ``urls_by_code`` map (built once per page from the raw HTML). Falls
+    back to the search page URL if the code has no matching link.
     """
     precio = 0
     codigo = ''
@@ -106,6 +127,8 @@ def _extract_card(lines: list[str]) -> dict | None:
     if structural < 2:
         return None
 
+    card_url = urls_by_code.get(codigo, f"{_BASE_URL}?b_type=arriendo")
+
     return {
         'id': f"MHR-{codigo}" if codigo else '',
         'portal': 'merinohermanos',
@@ -117,7 +140,7 @@ def _extract_card(lines: list[str]) -> dict | None:
         'parqueaderos': 0,
         'estrato': 0,
         'barrio': normalize_barrio(barrio),
-        'url': f"{_BASE_URL}?b_type=arriendo",
+        'url': card_url,
     }
 
 
@@ -125,9 +148,10 @@ def _parse_page(html: str) -> list[dict]:
     """Parse all listing cards from one HTML page."""
     text = _html_to_text(html)
     card_texts = _find_listing_cards(text)
+    urls_by_code = _extract_urls_by_code(html)
     listings: list[dict] = []
     for card_lines in card_texts:
-        listing = _extract_card(card_lines)
+        listing = _extract_card(card_lines, urls_by_code)
         if listing:
             listings.append(listing)
     return listings

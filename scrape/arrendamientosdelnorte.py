@@ -15,10 +15,28 @@ from scrape.validator import validate
 logger = logging.getLogger(__name__)
 
 _API_BASE = "https://arrendamientosdelnorte.com/wp-json/anorte/v1/buscador"
+_DETAIL_URL_TEMPLATE = (
+    "https://arrendamientosdelnorte.com/propiedades/arriendo/{tipo_slug}/"
+    "{barrio_slug}/{municipio_slug}/{codigo}/"
+)
 _TIPOS = ["apartamento", "casa", "apartaestudio"]
 _PER_PAGE = 30
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
+_SLUG_RE = re.compile(r"\s+")
+
+
+def _slugify(value: str) -> str:
+    """Build a URL slug for a property URL segment.
+
+    Rule (verified with portal): keep accents, lowercase, collapse whitespace to
+    a single hyphen. The server does NOT validate slug segments, so this is
+    robust to unusual inputs — even a totally-wrong slug still returns 200
+    and renders the property page.
+    """
+    s = str(value or "").strip().lower()
+    s = _SLUG_RE.sub("-", s)
+    return s
 
 
 def _clean_area(raw) -> int:
@@ -48,8 +66,24 @@ def _build_item(portal: str, item: dict) -> dict:
     tipo = _normalize_tipo_adn(item.get("tipo", ""))
     habitaciones = int(item.get("cuartos", 0) or 0)
     barrio = str(item.get("barrio", "")).strip()
-    url = str(item.get("link", "")).strip()
+    municipio = str(item.get("sector", "")).strip()
     codigo = str(item.get("codigo", "")).strip()
+
+    # The API's `link` field is broken (`/arriendo/arriendoNNNN` → 404). Build
+    # the canonical 5-segment permalink from tipo / barrio / municipio / codigo.
+    # The server does not validate slug segments, so this is robust to slug
+    # variations (e.g. "ALTO DE MEDINA" → "alto-de-medina", "San Jerónimo" stays
+    # accented). For inactive codigos the URL still 200s (falls back to the
+    # category archive), which is better than a 404.
+    if codigo:
+        url = _DETAIL_URL_TEMPLATE.format(
+            tipo_slug=_slugify(tipo),
+            barrio_slug=_slugify(barrio),
+            municipio_slug=_slugify(municipio),
+            codigo=codigo,
+        )
+    else:
+        url = ""
 
     listing = {
         "id": f"ADN-{codigo}" if codigo else "",
