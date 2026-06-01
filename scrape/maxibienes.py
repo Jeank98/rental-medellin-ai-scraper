@@ -75,6 +75,7 @@ def _extract_listing(card) -> dict:
                 break
             tipo_parts.append(str(node).strip())
         tipo_raw = ''.join(tipo_parts).strip()
+        tipo_raw = re.sub(r'\s*\([^)]*\)', '', tipo_raw).strip()
         listing['tipo'] = normalize_tipo(tipo_raw)
 
         full_text = h3.get_text(strip=True)

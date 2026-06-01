@@ -7,7 +7,7 @@ extracted via BeautifulSoup from data-attributes and text content.
 import logging
 import re
 from bs4 import BeautifulSoup
-from scrape.fetcher import fetch_page
+from scrape.fetcher import stealthy_fetch_page
 from scrape.normalize import (
     normalize_price,
     normalize_tipo,
@@ -65,11 +65,17 @@ def _extract_listing(card) -> dict:
     for key in ('precio', 'area', 'habitaciones', 'banos', 'parqueaderos', 'estrato'):
         listing[key] = 0
 
-    prop_id = card.get('data-property-id', '')
+    prop_id_el = card.select_one('[data-propertyid], [data-property-id]')
+    prop_id = prop_id_el.get('data-propertyid') or prop_id_el.get('data-property-id') if prop_id_el else ''
     if prop_id:
         listing['id'] = f"MTC-{prop_id}"
 
-    prop_url = card.get('data-property-url', '')
+    prop_url = ''
+    for a in card.select('a[href]'):
+        href = a.get('href', '')
+        if '/propiedad/' in href:
+            prop_url = href
+            break
     if prop_url:
         listing['url'] = normalize_url(prop_url, 'https://metrocasas.co')
 
@@ -111,7 +117,7 @@ def scrape(ciudad='medellin', sample_only=False, max_pages=None, verbose=False) 
     if sample_only and max_pages is None:
         max_pages = 3
 
-    html = fetch_page(_page_url(1))
+    html = stealthy_fetch_page(_page_url(1))
     if not html:
         logger.error("Failed to fetch Metrocasas page 1")
         return []
@@ -142,7 +148,7 @@ def scrape(ciudad='medellin', sample_only=False, max_pages=None, verbose=False) 
         logger.info("Page 1: %d cards", cards_count)
 
     for page in range(2, total_pages + 1):
-        html = fetch_page(_page_url(page))
+        html = stealthy_fetch_page(_page_url(page))
         if not html:
             logger.warning("Failed to fetch page %d, stopping", page)
             break

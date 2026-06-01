@@ -19,6 +19,7 @@ from scrape.normalize import (
     normalize_tipo,
     normalize_barrio,
     normalize_estrato,
+    normalize_garaje,
 )
 from scrape.validator import validate
 
@@ -213,7 +214,7 @@ def _html_to_text(html: str) -> str:
 
 
 def _extract_detail_fields(html: str) -> dict:
-    """Extract tipo, area, estrato from detail page HTML.
+    """Extract tipo, area, estrato, parqueaderos from detail page HTML.
 
     Detail page structure (server-rendered):
         [TIPO] en arriendo en [ZONA] Medellín
@@ -221,22 +222,43 @@ def _extract_detail_fields(html: str) -> dict:
         Detalles / Código del inmueble / NNN.. / Alcobas / N / Baños / N /
         Área privada / N M2 / Área terreno / N M2 / Garaje / N
         ... description text containing "estrato N" ...
+
+    Note: Some titles start with "En arriendo, Casa en..." (no leading tipo).
+    We skip noise words ("en", "arriendo", "venta", "for", "rent", ...) until we
+    find the first real tipo word.
+
+    Returns parqueaderos=None when detail page has no garaje label — caller
+    should keep the Phase A value in that case (distinguishes "garaje=0
+    explicitly" from "garaje label not on page").
     """
-    result = {"tipo": "", "area": 0, "estrato": 0}
+    result = {"tipo": "", "area": 0, "estrato": 0, "parqueaderos": None}
 
     # Convert HTML to plain text by stripping tags
     text = _html_to_text(html)
     lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
 
-    # --- Tipo: first word of title line containing "en arriendo" or "en venta" ---
+    # --- Tipo: scan line containing trigger phrase, skip noise words ---
+    # Edge case: "En arriendo, Casa en..." — first word is "en", not a tipo.
+    # We iterate words, skipping known noise words, and use the first real word.
+    _NOISE_WORDS = {
+        "en", "arriendo", "venta", "for", "rent", "in", "sale", "y",
+        "de", "el", "la", "los", "las", "un", "una", "the", "a", "an",
+        "del",
+    }
+    _TRIGGERS = ("en arriendo", "en venta", "for rent", "for sale")
+
     for line in lines:
         lower = line.lower()
-        if "en arriendo" in lower or "en venta" in lower:
-            first_word = lower.split()[0]
-            # Normalize English → Spanish
-            tipo = _TIPO_EN_TO_ES.get(first_word, first_word)
-            result["tipo"] = normalize_tipo(tipo)
+        if not any(t in lower for t in _TRIGGERS):
+            continue
+        words = [w.strip(",.;:!?¡¿()[]{}\"'") for w in lower.split()]
+        for word in words:
+            if not word or word in _NOISE_WORDS:
+                continue
+            translated = _TIPO_EN_TO_ES.get(word, word)
+            result["tipo"] = normalize_tipo(translated)
             break
+        break  # only process the first matching title line
 
     # --- Area: prefer Área privada, fallback Área terreno ---
     for i, line in enumerate(lines):
@@ -252,6 +274,22 @@ def _extract_detail_fields(html: str) -> dict:
             val = _extract_m2(lines[i + 1])
             if val > 0:
                 result["area"] = val
+
+    # --- Garaje: line-based label "Garaje" / "Parqueadero" with value on next line ---
+    # Detail page format: "Garaje\nN" or "Parqueadero\nN" or "Parqueaderos\nN"
+    _GARAJE_LABEL_RE = _re.compile(r"^(garaje|parqueaderos?)$", _re.IGNORECASE)
+    for i, line in enumerate(lines):
+        if _GARAJE_LABEL_RE.match(line.strip()) and i + 1 < len(lines):
+            result["parqueaderos"] = normalize_garaje(lines[i + 1])
+            break
+    # Fallback: inline format "Garaje: 2" or "Garaje 2" on same line
+    if result["parqueaderos"] is None:
+        _garaje_inline_re = _re.compile(
+            r"garaje[:\s]+(\d+|sí|si|incluido|no)", _re.IGNORECASE
+        )
+        match = _garaje_inline_re.search(text)
+        if match:
+            result["parqueaderos"] = normalize_garaje(match.group(1))
 
     # --- Estrato: in description prose, pattern "estrato N" ---
     # Extract only the FIRST contiguous number after "estrato" word
@@ -341,6 +379,10 @@ def scrape(
                 card["area"] = detail["area"]
             if detail["estrato"]:
                 card["estrato"] = detail["estrato"]
+            # None means "garaje label not on page" — keep Phase A value
+            # (which may itself be 0 or a value from the homepage card)
+            if detail.get("parqueaderos") is not None:
+                card["parqueaderos"] = detail["parqueaderos"]
 
         validate(card)
         all_listings.append(card)
