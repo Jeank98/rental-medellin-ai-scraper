@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import contextmanager
 
@@ -5,6 +6,8 @@ import psycopg2
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 TABLE_NAME = "listings"
 
@@ -106,21 +109,101 @@ def deactivate_listings(portal: str, ciudad: str):
             cur.execute(DEACTIVATE_SQL, {"portal": portal, "ciudad": ciudad})
 
 
-def insert_listings(rows: list[dict]):
+def insert_listings(rows: list[dict], ciudad: str = ""):
+    """Insert listings with per-row transaction isolation.
+
+    Each row's INSERT runs inside a SAVEPOINT so a single bad row does not
+    abort the entire batch. Empty/missing IDs are skipped with a warning
+    before any SQL is issued.
+
+    ``ciudad`` is the city for the WHOLE batch and is passed explicitly
+    (not read from row dicts). Portal scrapers historically did not include
+    ``ciudad`` in their row dicts — only the function-level param. Without
+    this explicit arg, the deactivate-then-insert flow would store rows
+    with ``ciudad=''`` (empty), making them invisible to ``--city medellin``
+    filters in the export.
+
+    Contract:
+        * Rows whose ``id`` is ``None``, empty, or whitespace-only are
+          skipped with a WARNING log and do not count toward the inserted
+          total.
+        * Rows that raise during INSERT are rolled back to their savepoint
+          and the loop continues. A WARNING is logged with the row's id
+          and the underlying error.
+        * All successfully-inserted rows are committed together in a single
+          outer transaction (committed by :func:`get_conn`'s context
+          manager). The function never partially-commits: either the whole
+          batch succeeds or the whole batch is rolled back on connection
+          failure.
+        * A summary log line is emitted on completion with the totals.
+
+    Args:
+        rows: List of listing dicts. Each row must contain at least:
+            ``id``, ``portal``, ``tipo``, ``precio``, ``area``,
+            ``habitaciones``, ``banos``, ``parqueaderos``, ``estrato``,
+            ``barrio``, ``url``. Missing string fields default to ``''``;
+            missing numeric fields default to ``0``.
+        ciudad: City for the entire batch (e.g. ``'medellin'``). Defaults
+            to ``''`` for backward compat but callers should always pass it.
+
+    Note:
+        Savepoint names are uniquified per row index (``row_sp_{i}``) so
+        that a previous row's errored savepoint does not collide with the
+        next row's. Per the SQL standard, ``ROLLBACK TO SAVEPOINT`` does
+        not destroy the savepoint, so reusing a static name across rows
+        would fail after the first error.
+    """
     required = ["id", "portal", "tipo", "precio", "area", "habitaciones",
                 "banos", "parqueaderos", "estrato", "barrio", "url", "ciudad"]
+    inserted = 0
+    skipped_empty_id = 0
+    errored = 0
+
     with get_conn() as conn:
         with conn.cursor() as cur:
-            # Deactivate existing listings for this portal+city first
+            # Deactivate existing listings for this portal+city first.
+            # portal comes from the row dict (set by the scraper).
+            # ciudad comes from the explicit arg (NOT from row dict — see
+            # docstring).
             if rows:
                 portal = rows[0].get("portal", "")
-                ciudad = rows[0].get("ciudad", "")
                 if portal and ciudad:
                     cur.execute(DEACTIVATE_SQL, {"portal": portal, "ciudad": ciudad})
 
-            for row in rows:
-                values = {k: row.get(k, "" if k in ("id", "portal", "tipo", "barrio", "url", "ciudad") else 0) for k in required}
-                cur.execute(INSERT_SQL, values)
+            for i, row in enumerate(rows):
+                row_id = (row.get("id") or "").strip()
+                if not row_id:
+                    logger.warning(
+                        "Skipping row with empty ID: url=%s",
+                        row.get("url") or "<no url>",
+                    )
+                    skipped_empty_id += 1
+                    continue
+
+                values = {
+                    k: row.get(k, "" if k in ("id", "portal", "tipo", "barrio", "url") else 0)
+                    for k in required
+                }
+                # Always override ciudad with the explicit arg.
+                values["ciudad"] = ciudad
+                sp_name = f"row_sp_{i}"
+                cur.execute(f"SAVEPOINT {sp_name}")
+                try:
+                    cur.execute(INSERT_SQL, values)
+                except Exception as e:
+                    cur.execute(f"ROLLBACK TO SAVEPOINT {sp_name}")
+                    logger.warning(
+                        "Skipping row %s due to error: %s", row_id, e,
+                    )
+                    errored += 1
+                else:
+                    cur.execute(f"RELEASE SAVEPOINT {sp_name}")
+                    inserted += 1
+
+    logger.info(
+        "insert_listings done: %d total, %d inserted, %d skipped (empty id), %d errored (ciudad=%r)",
+        len(rows), inserted, skipped_empty_id, errored, ciudad,
+    )
 
 
 def test_connection() -> bool:

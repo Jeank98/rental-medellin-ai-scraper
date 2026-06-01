@@ -29,6 +29,11 @@ TIPO_MAPPING = {
     'warehouse': 'bodega',
     'lot': 'lote',
     'farm': 'finca',
+    'consultorio': 'oficina',
+    'penthouse': 'apartamento',
+    'studio apartment': 'apartaestudio',
+    'local office': 'oficina',
+    'store': 'local',
 }
 
 _GARAJE_TEXTO = {
@@ -93,7 +98,7 @@ def normalize_estrato(raw) -> int:
     if raw is None:
         return 0
     if isinstance(raw, int):
-        if raw == 8:
+        if 7 <= raw <= 9:
             return 0
         return raw
     s = str(raw).strip()
@@ -106,7 +111,7 @@ def normalize_estrato(raw) -> int:
         return 0
     if s.isdigit():
         v = int(s)
-        if v == 8:
+        if 7 <= v <= 9:
             return 0
         return v
     return 0
@@ -170,4 +175,37 @@ if __name__ == '__main__':
     assert normalize_barrio('Barrio: Loreto') == 'Loreto'
     assert normalize_barrio('MEDELLIN - BELEN') == 'Belen'
     assert normalize_barrio('EL POBLADO') == 'El Poblado'
+    # --- T2: new TIPO_MAPPING entries ---
+    assert normalize_tipo('consultorio') == 'oficina'
+    assert normalize_tipo('Consultorio') == 'oficina'
+    assert normalize_tipo('CONSULTORIO') == 'oficina'
+    assert normalize_tipo('penthouse') == 'apartamento'
+    assert normalize_tipo('Penthouse') == 'apartamento'
+    assert normalize_tipo('studio apartment') == 'apartaestudio'
+    assert normalize_tipo('Studio Apartment') == 'apartaestudio'
+    # Ensure 'studio' alone still maps to apartaestudio (not shadowed by 'studio apartment')
+    assert normalize_tipo('studio') == 'apartaestudio'
+    assert normalize_tipo('local office') == 'oficina'
+    assert normalize_tipo('Local Office') == 'oficina'
+    # Ensure 'local' alone still maps to local (not shadowed by 'local office')
+    assert normalize_tipo('local') == 'local'
+    assert normalize_tipo('store') == 'local'
+    assert normalize_tipo('Store') == 'local'
+    # --- T2: widened estrato rejection (7, 8, 9 -> 0) ---
+    assert normalize_estrato(7) == 0
+    assert normalize_estrato(8) == 0
+    assert normalize_estrato(9) == 0
+    assert normalize_estrato('7') == 0
+    assert normalize_estrato('8') == 0
+    assert normalize_estrato('9') == 0
+    # Preserved behavior: 1-6 still returns 1-6
+    assert normalize_estrato(1) == 1
+    assert normalize_estrato(6) == 6
+    assert normalize_estrato('1') == 1
+    assert normalize_estrato('6') == 6
+    # Preserved edge cases
+    assert normalize_estrato(0) == 0
+    assert normalize_estrato(None) == 0
+    assert normalize_estrato('') == 0
+    assert normalize_estrato('Comercial') == 0
     print("All normalization tests passed!")

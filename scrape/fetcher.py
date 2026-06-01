@@ -227,3 +227,82 @@ def stealthy_fetch_with_action(
     except Exception as e:
         logger.error("Stealthy fetch error for %s: %s", url, e)
         return None
+
+
+def stealthy_fetch_page(url: str) -> Optional[str]:
+    """Fetch a JS-rendered page using Scrapling StealthyFetcher.
+
+    Launches headless Chrome via Playwright to execute page JavaScript
+    before returning the rendered HTML. Heavier than fetch_page (~2-3s
+    per page vs ~0.5s) — only use when server-rendered HTML is not
+    enough (e.g. Metrocasas, where prices are injected by JS).
+
+    Args:
+        url: The URL to fetch.
+
+    Returns:
+        Fully-rendered page HTML as string, or None if all retries
+        are exhausted.
+    """
+    fetcher = scrapling.StealthyFetcher()
+
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            resp = fetcher.fetch(url, timeout=_TIMEOUT * 1000, retries=1)
+
+            status = getattr(resp, "status", 200)
+            if status >= 400:
+                if status < 500:
+                    logger.warning(
+                        "HTTP %s for %s — not retrying (client error)", status, url
+                    )
+                    return None
+                logger.warning(
+                    "HTTP %s for %s (attempt %d/%d)",
+                    status,
+                    url,
+                    attempt + 1,
+                    _MAX_RETRIES + 1,
+                )
+            else:
+                return resp.html_content or ""
+
+        except Exception as e:
+            logger.warning(
+                "Stealthy fetch error for %s: %s (attempt %d/%d)",
+                url,
+                e,
+                attempt + 1,
+                _MAX_RETRIES + 1,
+            )
+
+        if attempt < _MAX_RETRIES:
+            delay = _RETRY_DELAYS[min(attempt, len(_RETRY_DELAYS) - 1)]
+            logger.debug("Retrying %s in %ds...", url, delay)
+            time.sleep(delay)
+
+    logger.error("All %d attempts exhausted for %s", _MAX_RETRIES + 1, url)
+    return None
+
+
+if __name__ == "__main__":
+    import inspect
+
+    sig = inspect.signature(stealthy_fetch_page)
+    params = list(sig.parameters.values())
+    assert len(params) == 1, f"expected 1 param, got {len(params)}"
+    assert params[0].name == "url", f"expected 'url' param, got {params[0].name!r}"
+    assert params[0].annotation is str, f"expected str annotation, got {params[0].annotation!r}"
+    assert sig.return_annotation == Optional[str], (
+        f"expected Optional[str] return, got {sig.return_annotation!r}"
+    )
+    assert callable(stealthy_fetch_page)
+    assert stealthy_fetch_page.__doc__ and "StealthyFetcher" in stealthy_fetch_page.__doc__
+
+    sig_fp = inspect.signature(fetch_page)
+    assert list(sig_fp.parameters)[0] == "url"
+    assert callable(fetch_json)
+    assert callable(bulk_fetch)
+    assert callable(stealthy_fetch_with_action)
+
+    print("All fetcher signature tests passed!")

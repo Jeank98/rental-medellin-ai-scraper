@@ -63,3 +63,8 @@ Fetch with `scrape/fetcher.py` `bulk_fetch()`. Extract from HTML text:
 | Field | Default 0 | Status |
 |-------|-----------|--------|
 | `estrato` | 0 | ✅ Genuine — Not a structured field; some descriptions mention it, most don't |
+
+## Recent fixes
+
+- **Tipo extraction skips noise words ("en", "arriendo", "venta", …)**: Some detail titles start with "En arriendo, Casa en La Milagrosa" — the old first-word strategy returned `tipo='en'`. The extractor now walks the words of the trigger line and skips a noise set (`en, arriendo, venta, for, rent, in, sale, y, de, el, la, los, las, un, una, the, a, an, del`) until it finds the first real tipo word, then normalizes it.
+- **Garaje (parqueaderos) extracted from detail page**: Phase B now reads the `Garaje` / `Parqueadero` / `Parqueaderos` label on the detail page (line-based: label on one line, value on the next; inline fallback `Garaje: N`). The extractor returns `parqueaderos=None` when the label is absent so the orchestrator preserves the Phase A homepage value instead of overwriting it with `0`.

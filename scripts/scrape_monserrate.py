@@ -18,7 +18,7 @@ def main():
             max_pages=args.max_pages,
             verbose=args.verbose,
         ),
-        args=args,
+        portal=args.portal, args=args,
     )
 
 

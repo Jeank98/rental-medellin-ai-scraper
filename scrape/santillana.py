@@ -129,6 +129,7 @@ def _parse_detail(html: str) -> dict:
 
 def _fetch_all_pages(max_pages=None, verbose=False) -> list[dict]:
     listings: list[dict] = []
+    skipped = 0
     page = 1
 
     while True:
@@ -145,7 +146,11 @@ def _fetch_all_pages(max_pages=None, verbose=False) -> list[dict]:
             break
 
         for card in cards:
-            listings.append(_parse_card(card))
+            listing = _parse_card(card)
+            if listing["precio"] > 50_000_000:
+                skipped += 1
+                continue
+            listings.append(listing)
 
         if verbose:
             logger.info("Page %d: %d cards, %d total", page, len(cards), len(listings))
@@ -153,6 +158,9 @@ def _fetch_all_pages(max_pages=None, verbose=False) -> list[dict]:
         page += 1
         if max_pages is not None and page > max_pages:
             break
+
+    if skipped and verbose:
+        logger.info(f"Skipped {skipped} listings with price > 50M (sale listings)")
 
     return listings
 
