@@ -13,7 +13,7 @@ def main():
     def arrendamientosdelnorte():
         return scrape(ciudad=args.ciudad, sample_only=args.sample_only, max_pages=args.max_pages, verbose=args.verbose)
 
-    run_scraper(scraper_fn=arrendamientosdelnorte, args=args)
+    run_scraper(scraper_fn=arrendamientosdelnorte, portal=args.portal, args=args)
 
 
 if __name__ == '__main__':

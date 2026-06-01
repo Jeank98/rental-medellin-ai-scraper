@@ -45,3 +45,8 @@ The rendered text shows listings with titles "TIPO en BARRIO", prices, and field
 - MCP `scrapling_get` renders JS — no browser/fetch needed
 - Titles may use "en" or omit it: "Apartamento en Laureles" or "Apartaestudio La America"
 - Area missing for some apartaestudios
+
+## Recent fixes
+
+- **StealthyFetcher required for production runs**: WordPress + RealHomes theme renders cards via JS, so `scrape/metrocasas.py` uses `stealthy_fetch_page` (Playwright) instead of the plain `fetch_page`. Plain HTTP returns empty card containers.
+- **`data-property-id` lives on inner spans, not the `<article>`**: The ID/URL attributes are exposed on a child element (and sometimes spelled `data-propertyid`). Extraction now does `card.select_one('[data-propertyid], [data-property-id]')` and falls back to scanning `a[href*="/propiedad/"]` for the canonical URL.

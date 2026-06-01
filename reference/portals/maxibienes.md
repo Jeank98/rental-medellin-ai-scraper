@@ -29,3 +29,7 @@
 - `ARRIENDO/VENTA` listings have `$ $ X / $Y` format — split on `/`, take first for rental
 - 69 listings have `estrato=7` (Colombia max is 6) — source data errors
 - Property types (2026-05-18): apartamento (415), local (203), apartaestudio (99), casa (84), oficina (50), bodega (17), lote (1), finca (1)
+
+## Recent fixes
+
+- **Parenthetical suffix stripped from tipo**: Titles like `"APARTAMENTO (Último piso)"` or `"CASA (Campestre)"` previously broke `normalize_tipo` because the raw string did not match any known tipo. The extractor now strips trailing parenthetical groups via `re.sub(r'\s*\([^)]*\)', '', tipo_raw)` before normalization, so `"APARTAMENTO (Último piso)"` → `"apartamento"`.

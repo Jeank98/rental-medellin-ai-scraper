@@ -30,3 +30,7 @@
 - Listing card `.ubicacion` always shows "Colombia" — useless
 - Uses `scrapling.find_all("div.item")` for cards and `scrapling.find_all("ul.list-li li")` for details
 - 7 property types observed: apartamento, casa, local, apartaestudio, bodega, oficina, lote
+
+## Recent fixes
+
+- **Price ceiling filter (`> 50,000,000 COP` → skip)**: The rental search endpoint occasionally leaks sale listings (or commercial leases priced like sales). `scrape/santillana.py` drops any card whose normalized `precio` exceeds 50M COP before queueing the detail fetch. The skip count is logged in `--verbose` mode.
