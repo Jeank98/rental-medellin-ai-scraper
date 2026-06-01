@@ -19,12 +19,16 @@
 | `parqueaderos` | `N parq.` | `0 parq.` → `0` |
 | `estrato` | **Not in card** | → `0` |
 | `barrio` | Title after ` - ` | `Casa en Arriendo - BUENOS AIRES` → `BUENOS AIRES` |
-| `url` | Fixed search URL | |
+| `url` | Card `<a href*="/detalle-propiedad/">` | `https://www.arrendamientosvillacruz.com.co/detalle-propiedad/{slug}-{code}` (slug includes tipo+barrio, code last) |
 
 **Scraping strategy:**
 - MCP `scrapling_fetch` renders initial batch — use for discovery
 - Full extraction requires Python API scroll: `StealthyFetcher.fetch()` + `page_action` with `page.mouse.wheel()`
 - "También te puede interesar" section has duplicates — deduplicate by `id`
+
+**Recent fixes (2026-06-01)**
+- URL field: now extracted from the card's `<a href*="/detalle-propiedad/">` link (per-listing detail page). Previously stored the search-page URL, breaking outbound links.
+- Scroll: bumped `wait_for_timeout` from 2000ms → 3000ms and `timeout` 30s → 90s. With 2s wait, only ~36 of 252 cards load before the count appears stable.
 
 **Dynamic scroll pattern (same as Coninsa — count-based, never hardcoded):**
 ```python
