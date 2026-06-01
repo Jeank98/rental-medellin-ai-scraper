@@ -100,6 +100,22 @@ The most robust single check: **look for `Código\nNNNN` where NNNN matches the 
 
 | Field | Default 0 | Status |
 |-------|-----------|--------|
-| `banos` | 0 | ✅ Genuine — Not in search API (detail endpoint has them but search doesn't) |
-| `parqueaderos` | 0 | ✅ Genuine — Not in search API (detail endpoint has them but search doesn't) |
-| `estrato` | 0 | ✅ Genuine — Not in search API (detail endpoint has them but search doesn't) |
+| `banos` | 0 | ⚠️ **Fillable** — NOT in search API or per-property API, but rendered on the 5-segment page ("Detalles" section). See "Future work: 2-phase strategy" below. |
+| `parqueaderos` | 0 | ⚠️ **Fillable** — Same as banos. Page renders `Parqueadero Carro: Si/No` and `Parqueadero Moto: Si/No` — derive `parqueaderos = 1 if either is Si else 0`. |
+| `estrato` | 0 | ⚠️ **Fillable** — Same as banos. Page renders `Estrato: N` directly. |
+
+**Status above is currently 1-phase.** The data exists on the rendered page; we just don't fetch it. See AGENTS.md → "Known follow-ups / future improvements" for the planned 2-phase upgrade.
+
+## Future work: 2-phase strategy
+
+To fill banos/parqueaderos/estrato, add a Phase 2 to the scraper that:
+
+1. After Phase 1 (bulk API → 137 listings), take each listing's 5-segment URL
+2. `stealthy_fetch_page(url)` to render the JS (same approach Metrocasas uses)
+3. Parse the rendered "Detalles" section for `Field: Value` pairs
+4. Update the listing dict with banos, parqueaderos, estrato
+5. Run in parallel (workers=20-24) — adds ~30-60s per scrape
+
+The infrastructure is already in place (`stealthy_fetch_page` in `scrape/fetcher.py`). The only new code is the parsing function (~30 lines) and the orchestration loop (~20 lines).
+
+Tracked in AGENTS.md "Known follow-ups" section. Decision to punt: 2026-06-01.
