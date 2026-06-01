@@ -33,7 +33,7 @@ def write_to_db(rows: list[dict], portal: str, ciudad: str = "medellin") -> int:
     try:
         create_tables()
         deactivate_listings(portal, ciudad)
-        insert_listings(rows)
+        insert_listings(rows, ciudad=ciudad)
         logger.info("Deactivated old %s listings, inserted %d new ones", portal, len(rows))
         return len(rows)
     except Exception as e:

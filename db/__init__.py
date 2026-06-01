@@ -109,12 +109,19 @@ def deactivate_listings(portal: str, ciudad: str):
             cur.execute(DEACTIVATE_SQL, {"portal": portal, "ciudad": ciudad})
 
 
-def insert_listings(rows: list[dict]):
+def insert_listings(rows: list[dict], ciudad: str = ""):
     """Insert listings with per-row transaction isolation.
 
     Each row's INSERT runs inside a SAVEPOINT so a single bad row does not
     abort the entire batch. Empty/missing IDs are skipped with a warning
     before any SQL is issued.
+
+    ``ciudad`` is the city for the WHOLE batch and is passed explicitly
+    (not read from row dicts). Portal scrapers historically did not include
+    ``ciudad`` in their row dicts — only the function-level param. Without
+    this explicit arg, the deactivate-then-insert flow would store rows
+    with ``ciudad=''`` (empty), making them invisible to ``--city medellin``
+    filters in the export.
 
     Contract:
         * Rows whose ``id`` is ``None``, empty, or whitespace-only are
@@ -134,8 +141,10 @@ def insert_listings(rows: list[dict]):
         rows: List of listing dicts. Each row must contain at least:
             ``id``, ``portal``, ``tipo``, ``precio``, ``area``,
             ``habitaciones``, ``banos``, ``parqueaderos``, ``estrato``,
-            ``barrio``, ``url``, ``ciudad``. Missing string fields default
-            to ``''``; missing numeric fields default to ``0``.
+            ``barrio``, ``url``. Missing string fields default to ``''``;
+            missing numeric fields default to ``0``.
+        ciudad: City for the entire batch (e.g. ``'medellin'``). Defaults
+            to ``''`` for backward compat but callers should always pass it.
 
     Note:
         Savepoint names are uniquified per row index (``row_sp_{i}``) so
@@ -152,10 +161,12 @@ def insert_listings(rows: list[dict]):
 
     with get_conn() as conn:
         with conn.cursor() as cur:
-            # Deactivate existing listings for this portal+city first
+            # Deactivate existing listings for this portal+city first.
+            # portal comes from the row dict (set by the scraper).
+            # ciudad comes from the explicit arg (NOT from row dict — see
+            # docstring).
             if rows:
                 portal = rows[0].get("portal", "")
-                ciudad = rows[0].get("ciudad", "")
                 if portal and ciudad:
                     cur.execute(DEACTIVATE_SQL, {"portal": portal, "ciudad": ciudad})
 
@@ -170,9 +181,11 @@ def insert_listings(rows: list[dict]):
                     continue
 
                 values = {
-                    k: row.get(k, "" if k in ("id", "portal", "tipo", "barrio", "url", "ciudad") else 0)
+                    k: row.get(k, "" if k in ("id", "portal", "tipo", "barrio", "url") else 0)
                     for k in required
                 }
+                # Always override ciudad with the explicit arg.
+                values["ciudad"] = ciudad
                 sp_name = f"row_sp_{i}"
                 cur.execute(f"SAVEPOINT {sp_name}")
                 try:
@@ -188,8 +201,8 @@ def insert_listings(rows: list[dict]):
                     inserted += 1
 
     logger.info(
-        "insert_listings done: %d total, %d inserted, %d skipped (empty id), %d errored",
-        len(rows), inserted, skipped_empty_id, errored,
+        "insert_listings done: %d total, %d inserted, %d skipped (empty id), %d errored (ciudad=%r)",
+        len(rows), inserted, skipped_empty_id, errored, ciudad,
     )
 
 
