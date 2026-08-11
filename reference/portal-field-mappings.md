@@ -18,3 +18,4 @@ Discovered field-to-column mappings for each scraped portal. Each portal has its
 | Alnago | `ALN` | [alnago.md](portals/alnago.md) | Two-phase (homepage→detail) | ✅ Done |
 | Habitamos | `HBM` | [habitamos.md](portals/habitamos.md) | Single-phase | ✅ Done |
 | Monserrate | `MNS` | [arrendamientosmonserrate.md](portals/arrendamientosmonserrate.md) | Two-phase (detail pages) | ✅ Done |
+| Acrecer | `AC` | [accrecer.md](portals/accrecer.md) | Single-phase (RSC) | ✅ Implemented |
