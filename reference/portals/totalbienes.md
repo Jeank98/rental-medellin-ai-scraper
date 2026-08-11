@@ -1,15 +1,19 @@
 # Total Bienes SAS (`TB`)
 
-- **URL**: `https://totalbienes.com/properties/medellin`
-- **Type**: Single-phase rendered HTML cards
-- **Listing cards**: Generic property anchors whose href contains `/property/{numeric}`
-- **Canonical pagination**:
+- **Residential type URLs**:
+  - `https://totalbienes.com/arriendo-apartamentos-medellin`
+  - `https://totalbienes.com/arriendo-casas-medellin`
+  - `https://totalbienes.com/arriendo-apartaestudios-medellin`
+- **Completeness URLs**:
   - `https://totalbienes.com/properties/medellin`
   - `https://totalbienes.com/properties/medellin/pagina/2`
-- **Finite boundary**: exactly the two numbered routes above. The baseline assessment had 9 cards on page 1 and 6 on page 2; current counts are inventory-dependent.
+- **Type**: Single-phase rendered HTML cards
+- **Listing cards**: Generic property anchors whose href contains `/property/{numeric}`
+- **Canonical pagination**: the two completeness URLs above; the type URLs are single-page official landing sources with no pagination links.
+- **Finite boundary**: fetch all three residential type URLs, then both numbered city pages. The baseline assessment had 8 apartment, 1 house, and 5 apartaestudio cards; current counts are inventory-dependent.
 - **Permalink**: `https://totalbienes.com/property/{numeric}`
 - **ID**: `TB-{numeric}`, matching the permalink suffix
-- **Strategy**: one phase; no detail requests
+- **Strategy**: one phase; type-source prefilter, numbered-page completeness union, first-seen ID deduplication, and final normalized-type guard; no detail requests
 
 ## Field Mapping
 
@@ -27,6 +31,19 @@
 | `barrio` | Card location ending in `, Medellín` | Text before municipality |
 | `url` | Card href | Absolute `https://totalbienes.com/property/{numeric}` |
 
+## Residential Source Strategy
+
+The three type URLs are the preferred source-level filters and currently
+provide the residential set: `apartamento`, `casa`, and the accepted
+residential subtype `apartaestudio`. The two numbered city URLs remain in the
+crawl to retain canonical pagination coverage and catch records that move
+between curated type pages and the city inventory.
+
+Rows from all five sources are unioned by `TB-{numeric}` and keep the first
+row seen. After normalization, only `apartamento`, `casa`, and
+`apartaestudio` may enter output; `local`, `oficina`, `bodega`, and other
+commercial types are discarded before final output.
+
 ## Pagination Boundary
 
 The baseline page-1 `Cargar más Propiedades` control appended page-2 repeats
@@ -36,9 +53,6 @@ fetches only the two literal numbered routes and keeps the first row for each
 ID as a defensive deduplication rule. If a load-more-only record later appears
 on a numbered page, it is included once; otherwise it remains outside the
 canonical boundary.
-
-The `/arriendo-apartamentos-medellin` SEO landing page is a partial curated
-subset and is not used as an inventory route.
 
 ## Zero Genuineness
 
