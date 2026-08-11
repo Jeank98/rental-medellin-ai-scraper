@@ -40,6 +40,7 @@ But NEVER rely on position alone. Always verify.
 2. **Check CSS classes**: verify no `span.banos` or similar class exists in card HTML
 3. **Not on card, no detail page available**: set to `0` per missing-field rule
 4. **Found in filters but not on cards**: the portal tracks bathrooms as a search filter but doesn't display per-property → set to `0`
+5. **Acrecer (embedded RSC payload)**: compare the search payload (`rooms.baths`) against the detail payload; if both omit the value, default to `0` and document the source absence. Do not infer a value from icon rendering: icons are conditional presentation and can be hidden even when a value exists in the payload
 
 ## Parqueaderos (parking) confusion with other fields
 
@@ -52,6 +53,8 @@ Outlier detection: if parqueaderos > 10, inspect the source HTML. Common causes:
 - Property code leaked into parking field (`<li>141</li>` where 141 is a code, not parking)
 - The portal merged two fields without a separator
 - Solution: flag in report, do NOT silently change
+
+**Acrecer (embedded RSC payload)**: `parqueaderos` comes only from `householdFeatures.garages` (private parking). If the key is absent, set `0` and document the source absence. Never invent or aggregate visitor/condominium parking.
 
 ## Barrio (neighborhood) extraction
 
@@ -96,3 +99,4 @@ Outlier detection: if parqueaderos > 10, inspect the source HTML. Common causes:
 - **Flag anomalies**, don't fix them silently
 - **Report missing fields** so the user knows the data's completeness
 - **Document portal-specific quirks** in `reference/portal-field-mappings.md` for future scrapes
+- **RSC/embedded payloads**: if the search response already contains all 11 contract fields, prefer one-phase extraction from the payload. Only fall back to two-phase (detail pages) when a sampled detail page adds a contractual field the search payload lacks
