@@ -22,7 +22,7 @@ All 14 portals have standalone executable scripts at `scripts/scrape_{portal}.py
 | REST API | 1 | ADN (Arrendamientos del Norte) |
 | GraphQL | 1 | Coninsa |
 | Single-phase HTML | 6 | Maxibienes, AlbertoAlvarez, MerinoHermanos, Habitamos, Metrocasas, Acrecer |
-| Two-phase HTML | 5 | SantaFe, Santillana, Alnago, Monserrate, La Palma |
+| Two-phase HTML | 6 | SantaFe, Santillana, Alnago, Monserrate, La Palma, Proser Inmobiliaria |
 | Load More (JS) | 1 | VillaCruz |
 
 **Per-portal ID formats** (each portal uses its own ID scheme):
@@ -42,6 +42,7 @@ All 14 portals have standalone executable scripts at `scripts/scrape_{portal}.py
 | Santillana | STL | STL-{numeric} | STL-12345 |
 | Acrecer | AC | AC-{numeric} | AC-12345 |
 | La Palma | LPI | LPI-{numeric} | LPI-10255187 |
+| Proser Inmobiliaria | PRO | PRO-{numeric} | PRO-10163884 |
 
 ### Key files
 | File | Purpose |
@@ -55,6 +56,9 @@ All 14 portals have standalone executable scripts at `scripts/scrape_{portal}.py
 | `scrape/{portal}.py` × 14 | Per-portal scraper logic (extraction, pagination, normalization) |
 | `scrape/accrecer.py` | Acrecer scraper (single-phase RSC, no detail pages) |
 | `scripts/scrape_accrecer.py` | Acrecer CLI entry point |
+| `scrape/proserinmobiliaria.py` | Proser scraper (two-phase HTML, canonical Medellín rental query) |
+| `scrape/proserinmobiliaria_detail.py` | Proser detail-page field parser |
+| `scripts/scrape_proserinmobiliaria.py` | Proser CLI entry point |
 | `scrape/fetcher.py` | HTTP fetch utilities (requests, aiohttp, Scrapling, Playwright) |
 | `scrape/normalize.py` | Normalization functions (precio, tipo, estrato, garaje, barrio, URL) |
 | `scrape/validator.py` | Anomaly detection and validation |
