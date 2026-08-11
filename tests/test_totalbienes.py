@@ -6,7 +6,10 @@ from unittest import mock
 
 from scrape.totalbienes import (
     CANONICAL_PAGE_URLS,
+    RESIDENTIAL_TYPE_URLS,
+    RESIDENTIAL_TYPES,
     deduplicate_listings,
+    filter_residential_listings,
     parse_search_page,
     scrape,
 )
@@ -99,7 +102,18 @@ class TestTotalBienesCardParser(unittest.TestCase):
 
 
 class TestTotalBienesPagination(unittest.TestCase):
-    """The scraper uses only the two finite numbered routes."""
+    """The scraper unions residential routes with numbered city routes."""
+
+    def test_residential_type_urls_are_official_and_ordered(self):
+        self.assertEqual(
+            RESIDENTIAL_TYPE_URLS,
+            (
+                "https://totalbienes.com/arriendo-apartamentos-medellin",
+                "https://totalbienes.com/arriendo-casas-medellin",
+                "https://totalbienes.com/arriendo-apartaestudios-medellin",
+            ),
+        )
+        self.assertEqual(RESIDENTIAL_TYPES, {"apartamento", "casa", "apartaestudio"})
 
     def test_canonical_urls_are_literal_and_ordered(self):
         self.assertEqual(
@@ -110,43 +124,89 @@ class TestTotalBienesPagination(unittest.TestCase):
             ),
         )
 
-    def test_scrape_fetches_numbered_pages_only(self):
+    def test_scrape_unions_type_routes_and_numbered_pages(self):
+        apartments = _load_fixture("apartments.html")
+        houses = _load_fixture("houses.html")
+        apartaestudios = _load_fixture("apartaestudios.html")
         page1 = _load_fixture("page1.html")
         page2 = _load_fixture("page2.html")
 
         with mock.patch(
-            "scrape.totalbienes.fetch_page", side_effect=[page1, page2]
+            "scrape.totalbienes.fetch_page",
+            side_effect=[
+                apartments,
+                houses,
+                apartaestudios,
+                page1,
+                page2,
+            ],
         ) as fetch:
             rows = scrape()
 
+        expected_urls = [*RESIDENTIAL_TYPE_URLS, *CANONICAL_PAGE_URLS]
         self.assertEqual(
-            fetch.call_args_list, [mock.call(url) for url in CANONICAL_PAGE_URLS]
+            fetch.call_args_list, [mock.call(url) for url in expected_urls]
         )
         self.assertEqual(
             [row["id"] for row in rows],
-            ["TB-1305", "TB-1220", "TB-1403", "TB-1215", "TB-1165"],
+            ["TB-1305", "TB-1220", "TB-1165", "TB-1278", "TB-1215"],
         )
         self.assertTrue(
             all("load" not in call.args[0].lower() for call in fetch.call_args_list)
         )
+        self.assertTrue(all(row["tipo"] in RESIDENTIAL_TYPES for row in rows))
 
-    def test_sample_only_limits_to_first_numbered_page(self):
-        page1 = _load_fixture("page1.html")
+    def test_sample_only_keeps_type_sources_and_first_numbered_page(self):
+        fixtures = [
+            _load_fixture("apartments.html"),
+            _load_fixture("houses.html"),
+            _load_fixture("apartaestudios.html"),
+            _load_fixture("page1.html"),
+        ]
 
-        with mock.patch("scrape.totalbienes.fetch_page", return_value=page1) as fetch:
+        with mock.patch("scrape.totalbienes.fetch_page", side_effect=fixtures) as fetch:
             rows = scrape(sample_only=True)
 
-        fetch.assert_called_once_with(CANONICAL_PAGE_URLS[0])
-        self.assertEqual(len(rows), 3)
+        self.assertEqual(
+            fetch.call_args_list,
+            [
+                mock.call(url)
+                for url in [
+                    *RESIDENTIAL_TYPE_URLS,
+                    CANONICAL_PAGE_URLS[0],
+                ]
+            ],
+        )
+        self.assertEqual(len(rows), 4)
 
     def test_max_pages_limits_numbered_boundary(self):
-        page1 = _load_fixture("page1.html")
+        fixtures = [
+            _load_fixture("apartments.html"),
+            _load_fixture("houses.html"),
+            _load_fixture("apartaestudios.html"),
+            _load_fixture("page1.html"),
+        ]
 
-        with mock.patch("scrape.totalbienes.fetch_page", return_value=page1) as fetch:
+        with mock.patch("scrape.totalbienes.fetch_page", side_effect=fixtures) as fetch:
             rows = scrape(max_pages=1)
 
-        fetch.assert_called_once_with(CANONICAL_PAGE_URLS[0])
-        self.assertEqual(len(rows), 3)
+        self.assertEqual(
+            fetch.call_args_list,
+            [
+                mock.call(url)
+                for url in [
+                    *RESIDENTIAL_TYPE_URLS,
+                    CANONICAL_PAGE_URLS[0],
+                ]
+            ],
+        )
+        self.assertEqual(len(rows), 4)
+
+    def test_non_residential_types_are_excluded_before_output(self):
+        rows = parse_search_page(_load_fixture("non_residential.html"))
+
+        self.assertEqual([row["tipo"] for row in rows], ["local", "oficina", "bodega"])
+        self.assertEqual(filter_residential_listings(rows), [])
 
     def test_duplicate_ids_keep_first_seen_row(self):
         page1_rows = parse_search_page(_load_fixture("page1.html"))

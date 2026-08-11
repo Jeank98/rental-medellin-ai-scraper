@@ -47,7 +47,7 @@ def test_sample_only_does_not_write_outputs():
     assert result == 0
     write_csv.assert_not_called()
     write_db.assert_not_called()
-    assert "Sample: 3 listing(s) extracted" in stdout.getvalue()
+    assert "Sample: 2 listing(s) extracted" in stdout.getvalue()
 
 
 def test_zero_rows_keep_shared_cli_exit_contract():

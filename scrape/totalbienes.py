@@ -1,10 +1,8 @@
 """Total Bienes SAS scraper — canonical one-phase HTML pagination.
 
-The two numbered Medellin routes are the crawl boundary; the page-1 load-more
-control is intentionally not clicked (it repeats page-2 cards). IDs are still
-deduplicated defensively as live inventory moves between routes. Field
-extraction walks generic property links and rendered text, with no dependency
-on portal CSS classes or detail-page requests.
+Residential type routes and two numbered Medellin pages bound the crawl; the
+page-1 load-more repeats page-2 cards. IDs are deduplicated defensively, and
+generic property links/rendered text avoid CSS selectors or detail requests.
 """
 
 import logging
@@ -21,9 +19,17 @@ from scrape.validator import validate
 logger = logging.getLogger(__name__)
 
 BASE_URL: Final = "https://totalbienes.com"
+RESIDENTIAL_TYPE_URLS: Final[tuple[str, ...]] = (
+    f"{BASE_URL}/arriendo-apartamentos-medellin",
+    f"{BASE_URL}/arriendo-casas-medellin",
+    f"{BASE_URL}/arriendo-apartaestudios-medellin",
+)
 CANONICAL_PAGE_URLS: Final[tuple[str, ...]] = (
     f"{BASE_URL}/properties/medellin",
     f"{BASE_URL}/properties/medellin/pagina/2",
+)
+RESIDENTIAL_TYPES: Final[frozenset[str]] = frozenset(
+    {"apartamento", "casa", "apartaestudio"}
 )
 _ZERO_BEDROOM_TYPES: Final = frozenset({"local", "oficina", "bodega", "lote", "finca"})
 
@@ -246,6 +252,11 @@ def deduplicate_listings(rows: Iterable[Listing]) -> list[Listing]:
     return unique
 
 
+def filter_residential_listings(rows: Iterable[Listing]) -> list[Listing]:
+    """Keep only the normalized residential contract types."""
+    return [row for row in rows if row["tipo"] in RESIDENTIAL_TYPES]
+
+
 def parse_search_page(html: str) -> list[Listing]:
     """Extract property anchors from one rendered numbered search page."""
     soup = BeautifulSoup(html, "html.parser")
@@ -258,6 +269,14 @@ def parse_search_page(html: str) -> list[Listing]:
         if listing:
             rows.append(listing)
     return deduplicate_listings(rows)
+
+
+def _source_urls(sample_only: bool, max_pages: int | None) -> tuple[str, ...]:
+    """Build residential-prefilter sources plus the bounded city pages."""
+    page_limit = 1 if sample_only and max_pages is None else len(CANONICAL_PAGE_URLS)
+    if max_pages is not None:
+        page_limit = min(page_limit, max(0, max_pages))
+    return (*RESIDENTIAL_TYPE_URLS, *CANONICAL_PAGE_URLS[:page_limit])
 
 
 def scrape(
@@ -273,20 +292,20 @@ def scrape(
         )
         return []
 
-    page_limit = 1 if sample_only and max_pages is None else len(CANONICAL_PAGE_URLS)
-    if max_pages is not None:
-        page_limit = min(page_limit, max(0, max_pages))
-
     rows: list[Listing] = []
-    for page_number, url in enumerate(CANONICAL_PAGE_URLS[:page_limit], start=1):
+    for source_number, url in enumerate(_source_urls(sample_only, max_pages), start=1):
         html = fetch_page(url)
         if not html:
-            logger.warning("Failed to fetch Total Bienes page %d", page_number)
-            break
-        page_rows = parse_search_page(html)
+            logger.warning("Failed to fetch Total Bienes source %d", source_number)
+            continue
+        page_rows = filter_residential_listings(parse_search_page(html))
         rows.extend(page_rows)
         if verbose:
-            logger.info("Total Bienes page %d: %d cards", page_number, len(page_rows))
+            logger.info(
+                "Total Bienes source %d: %d residential cards",
+                source_number,
+                len(page_rows),
+            )
 
     rows = deduplicate_listings(rows)
     for row in rows:
