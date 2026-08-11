@@ -1,5 +1,5 @@
 """
-Orchestrator module — 5-phase pipeline for scraping all 12 Colombian real
+Orchestrator module — 5-phase pipeline for scraping all 13 Colombian real
 estate portals in parallel with health checks, validation, and DB backup.
 """
 
@@ -13,6 +13,7 @@ from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from scrape.report import generate_report
 
 PORTALS = {
+    "accrecer": {"module": "accrecer", "min_listings": 12},
     "maxibienes": {"module": "maxibienes", "min_listings": 30},
     "albertoalvarez": {"module": "albertoalvarez", "min_listings": 50},
     "alnago": {"module": "alnago", "min_listings": 5},
