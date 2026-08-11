@@ -136,3 +136,25 @@ def test_scrape_never_sends_non_residential_cards_to_detail_fetch() -> None:
 
     assert [row["id"] for row in rows] == ["ZIT-10188009"]
     assert bulk_mock.call_args.args[0] == [detail_url]
+
+
+def test_scrape_never_sends_commercial_house_to_detail_fetch() -> None:
+    search_url = _page_url(1, "casas")
+    residential_url = (
+        "https://zitios.com.co/inmueble/arriendo-casa-en-belen-la-gloria_10017304"
+    )
+    commercial_url = (
+        "https://zitios.com.co/inmueble/arriendo-casa-comercial-en-belen-la-gloria_10017303"
+    )
+
+    def fetch(url: str) -> str:
+        return _load("search_page_commercial_house.html") if url == search_url else ""
+
+    with mock.patch("scrape.zitios.fetch_page", side_effect=fetch), mock.patch(
+        "scrape.zitios.bulk_fetch", return_value=[]
+    ) as bulk_mock:
+        rows = scrape(max_pages=1)
+
+    assert [row["id"] for row in rows] == ["ZIT-10017304"]
+    assert commercial_url not in [row["url"] for row in rows]
+    assert bulk_mock.call_args.args[0] == [residential_url]

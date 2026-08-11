@@ -166,6 +166,11 @@ def _explicit_no_parking(text: str) -> bool:
     )
 
 
+def _is_commercial_use(text: str) -> bool:
+    normalized = " ".join(text.casefold().replace("-", " ").split())
+    return any(marker in normalized for marker in ("casa comercial", "uso comercial"))
+
+
 def _parse_card(article: Tag) -> Listing | None:
     url = _property_link(article)
     code = _code_from_url(url)
@@ -174,6 +179,8 @@ def _parse_card(article: Tag) -> Listing | None:
         return None
 
     soup = BeautifulSoup(str(article), "lxml")
+    if _is_commercial_use(f"{url} {heading} {soup.get_text(' ', strip=True)}"):
+        return None
     values = _leaf_texts(soup)
     raw_type = _type_from_url(url) or _type_from_heading(heading)
     if raw_type not in _RESIDENTIAL_TYPES:
