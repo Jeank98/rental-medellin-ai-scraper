@@ -23,7 +23,7 @@ commercial type routes remain excluded.
 |---|---|---|
 | id | `COD: N` | `AEC-N`; matches detail `Código: N` |
 | portal | constant | `arrendamientoselcastillo` |
-| tipo | Standalone card type line | Normalize through shared `normalize_tipo`; retain residential and commercial types |
+| tipo | Standalone card type line | Normalize through shared `normalize_tipo`; only `apartamento`, `casa`, and `apartaestudio` enter output |
 | precio | Current non-struck-through `$` value | Ignore an older value rendered in `del` |
 | area | Card line ending in `m²` | Integer square metres |
 | habitaciones | `Alcobas` / `Alcoba` | Commercial cards can explicitly show `0` |
@@ -37,7 +37,7 @@ commercial type routes remain excluded.
 
 - Search cards visibly emit `0 Alcobas` and `0 parq.` for commercial records; these source values are filtered before detail requests.
 - Search cards do not emit `Estrato`; detail pages do. A fetched detail without an Estrato label yields `0`.
-- A failed detail fetch also leaves `estrato=0` and is reported through the scraper's existing validation/logging path.
+- A failed detail fetch leaves `estrato=0`; the current validator does not flag that zero, so no validation or logging guarantee should be inferred.
 
 ## Risks
 

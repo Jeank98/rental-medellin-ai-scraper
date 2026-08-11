@@ -11,7 +11,7 @@ uv run python scripts/run_all.py --workers 18
 # Run a single portal:
 uv run python scripts/scrape_maxibienes.py --output db
 
-# Health check only (no scrape):
+# Skip the health check and scrape all portals:
 uv run python scripts/run_all.py --skip-health --workers 12
 ```
 
@@ -75,15 +75,15 @@ rental-medellin-ai-scraper/
 │   ├── csv_writer.py                # CSV output writer
 │   ├── db_writer.py                 # Direct-to-DB INSERT/DELETE operations
 │   ├── report.py                    # Box-drawn console report formatter
-│   ├── orchestrator.py              # 5-phase pipeline: health → scrape → validate → backup → report
+│   ├── orchestrator.py              # 5-phase pipeline: health → backup → scrape → validate → report
 │   ├── maxibienes.py                # MXB scraper
 │   ├── albertoalvarez.py            # AAL scraper
 │   ├── alnago.py                    # ALN scraper (JSON API)
 │   ├── arrendamientosdelnorte.py    # ADN scraper
 │   ├── arrendamientosmonserrate.py  # MNS scraper
 │   ├── arrendamientossantafe.py     # ASF scraper
-│   ├── arrendamientosvillacruz.py   # AVC scraper (Selenium Load More)
-│   ├── coninsa.py                   # CON scraper (Selenium Load More)
+│   ├── arrendamientosvillacruz.py   # AVC scraper (StealthyFetcher Load More)
+│   ├── coninsa.py                   # CON scraper (GraphQL API)
 │   ├── habitamos.py                 # HBM scraper
 │   ├── merinohermanos.py            # MHR scraper (JSON API)
 │   ├── metrocasas.py                # MTC scraper
@@ -160,8 +160,8 @@ rental-medellin-ai-scraper/
 | 4 | Arrendamientos del Norte | `ADN` | Single-phase | `scrape_adn.py` |
 | 5 | Arrendamientos Monserrate | `MNS` | Two-phase (detail pages) | `scrape_monserrate.py` |
 | 6 | Arrendamientos SantaFe | `ASF` | Two-phase (detail pages) | `scrape_asf.py` |
-| 7 | Arrendamientos Villa Cruz | `AVC` | Single-phase + Selenium Load More | `scrape_villacruz.py` |
-| 8 | Coninsa | `CON` | Single-phase + Selenium Load More | `scrape_coninsa.py` |
+| 7 | Arrendamientos Villa Cruz | `AVC` | Single-phase + StealthyFetcher Load More | `scrape_villacruz.py` |
+| 8 | Coninsa | `CON` | GraphQL API | `scrape_coninsa.py` |
 | 9 | Habitamos | `HBM` | Single-phase | `scrape_habitamos.py` |
 | 10 | Merino Hermanos | `MHR` | Single-phase (JSON API) | `scrape_merinohermanos.py` |
 | 11 | Metrocasas | `MTC` | Single-phase | `scrape_metrocasas.py` |
@@ -179,7 +179,7 @@ rental-medellin-ai-scraper/
 - **PostgreSQL** (any provider) if using `--output db`
 - **pg_dump** (in `$PATH`) for automated DB backups via `run_all.py`
 - **Scrapling MCP** (Docker or Python) for page fetching
-- **Chromium/Chrome** for Selenium-based portals (Villa Cruz, Coninsa)
+- **Chromium/Chrome** for StealthyFetcher portals (Villa Cruz, El Castillo, Metrocasas)
 
 ## Orchestrator Output
 

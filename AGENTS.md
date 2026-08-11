@@ -62,7 +62,7 @@ All 18 portals have standalone executable scripts at `scripts/scrape_{portal}.py
 | `scrape/proserinmobiliaria.py` | Proser scraper (two-phase HTML, canonical Medellín rental query) |
 | `scrape/proserinmobiliaria_detail.py` | Proser detail-page field parser |
 | `scripts/scrape_proserinmobiliaria.py` | Proser CLI entry point |
-| `scrape/arrendamientoselcastillo.py` | El Castillo scraper (two-phase Livewire, no detail pages) |
+| `scrape/arrendamientoselcastillo.py` | El Castillo scraper (two-phase Livewire search + detail enrichment for estrato) |
 | `scrape/lapalma.py` | La Palma scraper (two-phase HTML) |
 | `scrape/zitios.py` | Zitios scraper (two-phase HTML) |
 | `scrape/totalbienes.py` | Total Bienes scraper (single-phase HTML, no detail pages) |
@@ -136,7 +136,7 @@ All portal scripts share these flags.
 - Which fields are present vs missing on cards
 - Whether detail pages are needed (two-phase portals)
 - Portal-specific gotchas (dual prices, compound tipos, text-based garaje, etc.)
-- Whether Python API fallback is needed (Coninsa, Villa Cruz)
+- Whether Python API fallback is needed (El Castillo, Villa Cruz)
 
 This makes repeat scrapes instant — no Phase 1 needed for known portals.
 
@@ -232,7 +232,7 @@ Do NOT flag these as anomalies. The validator in `scrape/validator.py` accounts 
 
 ### MCP Limitation — Button Click / Scroll Fallback
 
-Scrapling MCP does not expose `page_action` for clicks or scrolls. For "Load More" portals, use Python API:
+Scrapling MCP does not expose `page_action` for clicks or scrolls. For "Load More" portals (El Castillo and Villa Cruz), use Python API:
 
 ```python
 from scrapling import StealthyFetcher
@@ -255,4 +255,4 @@ resp = StealthyFetcher.fetch(url, page_action=click_load_more, headless=True)
 
 **Never hardcode click/scroll counts.** Stop when button disappears OR listing count stops growing.
 
-See `reference/portals/coninsa.md` and `reference/portals/arrendamientosvillacruz.md` for full examples.
+See `reference/portals/arrendamientoselcastillo.md` and `reference/portals/arrendamientosvillacruz.md` for full examples.
