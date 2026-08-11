@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 import scripts.scrape_zitios
+from scrape.zitios import _page_url
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "zitios"
 
@@ -23,14 +24,17 @@ def test_sample_only_uses_fixture_scraper_without_writers() -> None:
         max_pages=1,
         verbose=False,
     )
-    search_url = "https://zitios.com.co/inmuebles/g/arriendo/c/medell%C3%ADn/"
+    search_urls = [
+        _page_url(1, property_type)
+        for property_type in ("apartamentos", "casas", "apartaestudios")
+    ]
     detail_urls = [
         "https://zitios.com.co/inmueble/arriendo-apartamento-robledo-pajarito_10188009",
         "https://zitios.com.co/inmueble/arriendo-apartaestudio-en-calasanz_10125019",
     ]
 
     def fetch(url: str) -> str:
-        if url == search_url:
+        if url in search_urls:
             return _load("search_page_1.html")
         return ""
 

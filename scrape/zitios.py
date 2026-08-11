@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 _BASE = "https://zitios.com.co"
 _SEARCH_URL = f"{_BASE}/inmuebles/g/arriendo/c/medell%C3%ADn/"
+_RESIDENTIAL_ROUTES = ("apartamentos", "casas", "apartaestudios")
+_RESIDENTIAL_TYPES = frozenset(("apartamento", "casa", "apartaestudio"))
 _PORTAL = "zitios"
 _PREFIX = "ZIT"
 _TOTAL_PAGES = 4
@@ -26,8 +28,11 @@ Listing = TypedDict("Listing", {"id": str, "portal": str, "tipo": str, "precio":
 DetailFields = TypedDict("DetailFields", {"tipo": str, "precio": int, "area": int, "habitaciones": int, "banos": int, "parqueaderos": int | None, "estrato": int, "barrio": str})
 
 
-def _page_url(page: int) -> str:
-    return _SEARCH_URL if page <= 1 else f"{_SEARCH_URL}?pagina={page}"
+def _page_url(page: int, property_type: str | None = None) -> str:
+    search_url = _SEARCH_URL
+    if property_type is not None:
+        search_url = f"{_BASE}/inmuebles/g/arriendo/t/{property_type}/c/medell%C3%ADn/"
+    return search_url if page <= 1 else f"{search_url}?pagina={page}"
 
 
 def _canonical_url(raw: str) -> str:
@@ -171,6 +176,8 @@ def _parse_card(article: Tag) -> Listing | None:
     soup = BeautifulSoup(str(article), "lxml")
     values = _leaf_texts(soup)
     raw_type = _type_from_url(url) or _type_from_heading(heading)
+    if raw_type not in _RESIDENTIAL_TYPES:
+        return None
     garage = _attribute_value(soup, ("garaje", "garajes", "parqueadero"), "content")
     if not garage and _explicit_no_parking(soup.get_text(" ", strip=True)):
         garage = "0"
@@ -272,21 +279,23 @@ def scrape(
         page_limit = 1
 
     by_id: dict[str, Listing] = {}
-    for page in range(1, page_limit + 1):
-        html = fetch_page(_page_url(page)) or ""
-        page_rows = parse_search_page(html)
-        if not page_rows:
-            break
-        for row in page_rows:
-            if row["id"] not in by_id:
-                by_id[row["id"]] = row
-        if verbose:
-            logger.info(
-                "Zitios page %d: %d cards, %d unique",
-                page,
-                len(page_rows),
-                len(by_id),
-            )
+    for property_type in _RESIDENTIAL_ROUTES:
+        for page in range(1, page_limit + 1):
+            html = fetch_page(_page_url(page, property_type)) or ""
+            page_rows = parse_search_page(html)
+            if not page_rows:
+                break
+            for row in page_rows:
+                if row["id"] not in by_id:
+                    by_id[row["id"]] = row
+            if verbose:
+                logger.info(
+                    "Zitios %s page %d: %d cards, %d unique",
+                    property_type,
+                    page,
+                    len(page_rows),
+                    len(by_id),
+                )
 
     rows = list(by_id.values())
     if not rows:
