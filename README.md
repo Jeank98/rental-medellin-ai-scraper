@@ -5,8 +5,8 @@ AI-agent-driven knowledge base for scraping real estate rental listings from Col
 ## Quick Start
 
 ```bash
-# Run all 13 portals at once:
-uv run python scripts/run_all.py --workers 13
+# Run all 14 portals at once:
+uv run python scripts/run_all.py --workers 14
 
 # Run a single portal:
 uv run python scripts/scrape_maxibienes.py --output db
@@ -88,9 +88,10 @@ rental-medellin-ai-scraper/
 │   ├── merinohermanos.py            # MHR scraper (JSON API)
 │   ├── metrocasas.py                # MTC scraper
 │   ├── santillana.py                # STL scraper
-│   └── accrecer.py                  # AC scraper (single-phase RSC)
+│   ├── accrecer.py                  # AC scraper (single-phase RSC)
+│   └── arrendamientoselcastillo.py  # AEC scraper (Livewire load-more + detail)
 ├── scripts/                         # Thin CLI entry points
-│   ├── run_all.py                   # Orchestrator: runs all 13 portals in parallel
+│   ├── run_all.py                   # Orchestrator: runs all 14 portals in parallel
 │   ├── scrape_maxibienes.py
 │   ├── scrape_albertoalvarez.py
 │   ├── scrape_alnago.py
@@ -104,6 +105,7 @@ rental-medellin-ai-scraper/
 │   ├── scrape_metrocasas.py
 │   ├── scrape_santillana.py
 │   ├── scrape_accrecer.py
+│   ├── scrape_arrendamientoselcastillo.py
 │   ├── setup_db.py                  # Create listings table
 │   ├── test_save.py                 # Test insert and read-back
 │   ├── insert_listings.py           # Bulk insert from JSON
@@ -122,7 +124,7 @@ rental-medellin-ai-scraper/
 │   └── scrapling-mcp-setup.md       # Scrapling MCP setup guide
 ├── reference/
 │   ├── portal-field-mappings.md      # Index of all portal mappings
-│   └── portals/                      # Individual portal files (13 portals)
+│   └── portals/                      # Individual portal files (14 portals)
 ```
 
 ## Output Columns
@@ -157,6 +159,7 @@ rental-medellin-ai-scraper/
 | 11 | Metrocasas | `MTC` | Single-phase | `scrape_metrocasas.py` |
 | 12 | Santillana | `STL` | Two-phase (detail pages) | `scrape_santillana.py` |
 | 13 | Acrecer | `AC` | Single-phase (RSC) | `scrape_accrecer.py` |
+| 14 | Arrendamientos El Castillo | `AEC` | Two-phase (Livewire + detail) | `scrape_arrendamientoselcastillo.py` |
 
 ## Requirements
 
