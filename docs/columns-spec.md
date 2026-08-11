@@ -9,11 +9,11 @@ Every listing record (CSV row or database row) must have exactly these 11 column
 
 Format: `{PREFIX}-{CODE}`
 
-- `PREFIX`: 2-4 uppercase letters derived from portal name. Maxibienes → `MXB`, FincaRaiz → `FNR`, Arrendamientos SantaFe → `ASF`, MetroCuadrado → `MTC`
+- `PREFIX`: 2-4 uppercase letters derived from portal name. Maxibienes → `MXB`, FincaRaiz → `FNR`, Arrendamientos SantaFe → `ASF`, MetroCuadrado → `MTC`, Acrecer → `AC`
 - `CODE`: internal property code from the portal (numeric or alphanumeric). Extract from URL path, data attribute, or visible label
 - If no code exists, generate: `{PREFIX}-{ROW_INDEX}`
 
-Examples: `MXB-69007`, `ASF-A11248`, `FNR-ABC123`
+Examples: `MXB-69007`, `ASF-A11248`, `FNR-ABC123`, `AC-12345`
 
 ### 2. `portal` — string
 **Portal identifier.** Domain without TLD, lowercase.
