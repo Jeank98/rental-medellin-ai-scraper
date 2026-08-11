@@ -88,6 +88,32 @@ Outlier detection: values > 10 are likely source data errors (property codes lea
 3. **Data attribute**: `data-id`, `data-code`, `data-property-id`.
 4. **Generate**: if no code found, use `{PREFIX}-{row_index}`.
 
+## Embedded RSC/JSON payloads
+
+Some portals (notably Next.js) deliver listings in an embedded payload rather than rendered card markup. Before mapping CSS classes or icons, check the page source for:
+- `self.__next_f.push(...)`: Next.js RSC flight data; the payload may be split across multiple `push` calls, so concatenate before parsing
+- `searchResults`: the listings array inside the payload
+- `totalRecords` / `recordsPerPage`: pagination bounds
+
+Map fields **by their JSON key names**, never by icon position or card layout. Icons in the rendered UI are conditional presentation: a hidden icon does not prove the value is absent from the payload.
+
+Acrecer field precedence (one-phase RSC):
+
+| Column | Payload key | Notes |
+|---|---|---|
+| id | `code` | `AC-{digits}` |
+| tipo | `propertyType` | lowercase |
+| precio | `rentValue` | plain integer |
+| area | `builtArea` | `round()` |
+| habitaciones | `numberOfRooms` | 0 when absent |
+| banos | `rooms.baths` | 0 when absent |
+| parqueaderos | `householdFeatures.garages` | private parking only; never sum or invent visitor/condominium parking |
+| estrato | `stratum` | Roman numeral (III-VI) → integer |
+| barrio | `sectorName` → `zoneName` | sector first, zone fallback, then empty |
+| url | `https://www.acrecer.com/inmueble/{code}` | absolute |
+
+A missing key defaults to `0` (numeric) or empty string (text) per the column contract; it is a genuine source absence.
+
 ## Validation signals
 
 When you think you've mapped a field, validate:

@@ -44,6 +44,20 @@ After mapping fields on one card, verify the same mapping works on at least 3 di
 - **Field check order**: inspect CSS classes first (1.2), then check if missing fields exist on the detail page
 - Document the two-phase strategy (if needed) in the portal reference file
 
+### 1.7 Identify embedded RSC/JSON payloads before treating a portal as card HTML
+
+Some portals (notably Next.js sites) render no useful card markup: listings live in an embedded JSON payload, not in DOM cards. Before mapping CSS card selectors, check the page source for:
+- `self.__next_f.push(...)` segments: Next.js RSC flight data (may be split across multiple `push` calls, so concatenate before parsing)
+- Embedded JSON objects like `searchResults` or `window.__NEXT_DATA__`
+
+**Acrecer (one-phase RSC) example**:
+- Extract the `searchResults` array from the concatenated payload instead of reading card markup
+- Pagination is a direct `?page=N` parameter; compute the bound from `totalRecords` / `recordsPerPage` (12 per page); a zero-record page stops that type
+- No detail Phase B: sampled detail pages did not add any required column, so extraction stays single-phase
+- UI icons are conditional presentation: a missing icon means the source omitted the value, not that extraction failed. Check the source payload and the detail page before deciding a field is a genuine zero
+
+Rule of thumb: when a search response payload already contains all 11 contract fields, prefer one-phase extraction from the payload. Only go two-phase when a sampled detail page actually adds a field the search payload lacks.
+
 ## Phase 2: Bulk Scrape
 
 ### 2.1 Use `scrapling_bulk_get` when possible
@@ -54,6 +68,7 @@ For server-rendered pages, `bulk_get` is faster and cheaper than browser-based f
 - **Phase B**: `scrapling_bulk_get` all detail page URLs → extract ONLY the fields missing from cards (typically banos, estrato)
 - **Merge**: update phase A listings with phase B values; keep card values for fields already present
 - Detail pages that fail to load → keep card defaults (0 for numeric, "" for string)
+- **Exception (Acrecer)**: a documented one-phase portal stays one-phase even though it has detail pages: sampled detail pages did not enrich any missing contract field (see `reference/portals/accrecer.md`)
 
 ### 2.3 Two-phase portals requiring JS: use `scrapling_bulk_fetch` or `bulk_stealthy_fetch`
 If detail pages require JavaScript rendering (not Santa Fe / Santillana / Monserrate — these are server-rendered).
