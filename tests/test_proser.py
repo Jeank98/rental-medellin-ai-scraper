@@ -7,6 +7,7 @@ from unittest import mock
 
 from scrape.proserinmobiliaria import (
     COLUMNS,
+    RESIDENTIAL_SOURCE_URLS,
     merge_detail,
     parse_detail_page,
     parse_search_page,
@@ -63,6 +64,22 @@ class TestSearchParsing(unittest.TestCase):
 
         self.assertEqual(rows[0]["tipo"], "casa")
 
+    def test_residential_sources_use_city_type_and_rent_parameters(self):
+        self.assertEqual(
+            RESIDENTIAL_SOURCE_URLS,
+            {
+                "apartamento": "https://proserinmobiliaria.com/s/apartamento/alquiler?id_city=496&id_property_type=2&business_type%5B0%5D=for_rent",
+                "casa": "https://proserinmobiliaria.com/s/casa/alquiler?id_city=496&id_property_type=1&business_type%5B0%5D=for_rent",
+                "apartaestudio": "https://proserinmobiliaria.com/s/apartaestudio/alquiler?id_city=496&id_property_type=14&business_type%5B0%5D=for_rent",
+            },
+        )
+
+    def test_commercial_marketplace_and_sale_only_cards_are_rejected(self):
+        rows, _ = parse_search_page(_load("search_page_leakage.html"))
+
+        self.assertEqual({row["id"] for row in rows}, {"PRO-7000001", "PRO-7000002"})
+        self.assertTrue(all(row["tipo"] in {"apartamento", "casa", "apartaestudio"} for row in rows))
+
 
 class TestDetailMerge(unittest.TestCase):
     """Detail pages fill fields absent from search cards."""
@@ -109,10 +126,14 @@ class TestTwoPhaseScrape(unittest.TestCase):
             rows = scrape(max_pages=1)
 
         details.assert_called_once()
-        pages.assert_called_once_with(
-            "https://proserinmobiliaria.com/search?id_city=496&business_type%5B0%5D=for_rent&"
-            "order_by=created_at&order=desc&page=1&for_sale=0&for_rent=1&"
-            "for_temporary_rent=0&for_transfer=0&lax_business_type=1"
+        self.assertEqual(pages.call_count, 3)
+        self.assertEqual(
+            {call.args[0] for call in pages.call_args_list},
+            {
+                "https://proserinmobiliaria.com/search?id_city=496&id_property_type=2&business_type%5B0%5D=for_rent&order_by=created_at&order=desc&page=1&for_sale=0&for_rent=1&for_temporary_rent=0&for_transfer=0&lax_business_type=1",
+                "https://proserinmobiliaria.com/search?id_city=496&id_property_type=1&business_type%5B0%5D=for_rent&order_by=created_at&order=desc&page=1&for_sale=0&for_rent=1&for_temporary_rent=0&for_transfer=0&lax_business_type=1",
+                "https://proserinmobiliaria.com/search?id_city=496&id_property_type=14&business_type%5B0%5D=for_rent&order_by=created_at&order=desc&page=1&for_sale=0&for_rent=1&for_temporary_rent=0&for_transfer=0&lax_business_type=1",
+            },
         )
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[1]["estrato"], 4)
@@ -125,6 +146,21 @@ class TestTwoPhaseScrape(unittest.TestCase):
             rows = scrape(max_pages=1)
 
         self.assertEqual(rows, [])
+
+    def test_scrape_never_sends_leakage_cards_to_details(self):
+        search = _load("search_page_leakage.html")
+        with mock.patch("scrape.proserinmobiliaria.fetch_page", return_value=search), mock.patch(
+            "scrape.proserinmobiliaria.bulk_fetch", return_value=[]
+        ) as details:
+            scrape(max_pages=1)
+
+        self.assertEqual(
+            set(details.call_args.args[0]),
+            {
+                "https://proserinmobiliaria.com/apartamento-alquiler-laureles-medellin/7000001",
+                "https://proserinmobiliaria.com/casa-alquiler-laureles-medellin/7000002",
+            },
+        )
 
 
 if __name__ == "__main__":

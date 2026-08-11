@@ -1,16 +1,11 @@
-"""Proser Inmobiliaria two-phase rental scraper.
-
-Phase A reads the canonical Medellin rental search cards. Phase B fetches each
-official detail page because estrato and the labeled neighborhood are absent
-from cards. Parsing is based on semantic DOM text, not CSS selectors or regex.
-"""
+"""Proser two-phase rental scraper using semantic DOM text and no regex."""
 
 from __future__ import annotations
 
 import logging
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import TypeAlias
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlparse
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag
@@ -25,6 +20,11 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://proserinmobiliaria.com"
 PORTAL = "proserinmobiliaria"
 PREFIX = "PRO"
+RESIDENTIAL_SOURCE_URLS = {
+    "apartamento": f"{BASE_URL}/s/apartamento/alquiler?id_city=496&id_property_type=2&business_type%5B0%5D=for_rent",
+    "casa": f"{BASE_URL}/s/casa/alquiler?id_city=496&id_property_type=1&business_type%5B0%5D=for_rent",
+    "apartaestudio": f"{BASE_URL}/s/apartaestudio/alquiler?id_city=496&id_property_type=14&business_type%5B0%5D=for_rent",
+}
 COLUMNS = [
     "id", "portal", "tipo", "precio", "area", "habitaciones", "banos",
     "parqueaderos", "estrato", "barrio", "url",
@@ -32,24 +32,17 @@ COLUMNS = [
 Listing: TypeAlias = dict[str, str | int]
 
 _PER_PAGE = 12
-_SEARCH_PARAMS = (
-    ("id_city", "496"),
-    ("business_type[0]", "for_rent"),
-    ("order_by", "created_at"),
-    ("order", "desc"),
-    ("for_sale", "0"),
-    ("for_rent", "1"),
-    ("for_temporary_rent", "0"),
-    ("for_transfer", "0"),
-    ("lax_business_type", "1"),
+_RESIDENTIAL_TYPES = frozenset(RESIDENTIAL_SOURCE_URLS)
+_SEARCH_TAIL = (
+    "&order_by=created_at&order=desc&page={page}&for_sale=0&for_rent=1"
+    "&for_temporary_rent=0&for_transfer=0&lax_business_type=1"
 )
-_TIPOS = {"apartamento", "casa", "apartaestudio", "local", "oficina", "bodega", "lote", "finca"}
+_TIPOS = _RESIDENTIAL_TYPES | {"local", "oficina", "bodega", "lote", "finca"}
 
 
-def _page_url(page: int) -> str:
-    params = list(_SEARCH_PARAMS)
-    params.insert(4, ("page", str(page)))
-    return f"{BASE_URL}/search?{urlencode(params)}"
+def _page_url(source_url: str, page: int) -> str:
+    query = urlparse(source_url).query
+    return f"{BASE_URL}/search?{query}{_SEARCH_TAIL.format(page=page)}"
 
 
 def _empty_listing() -> Listing:
@@ -126,7 +119,6 @@ def _value_before_label(lines: list[str], labels: tuple[str, ...], field: str) -
 
 
 def _price_after_rent_label(lines: list[str]) -> int:
-    """Select the amount labeled Alquiler, never the sale amount."""
     for index, line in enumerate(lines):
         if line.casefold().strip(" :") != "alquiler":
             continue
@@ -140,7 +132,6 @@ def _price_after_rent_label(lines: list[str]) -> int:
 
 
 def _tipo(lines: list[str]) -> str:
-    """Find the first recognized property type in a card's text."""
     for line in lines:
         raw = line.strip(" .,:")
         normalized = normalize_tipo(raw)
@@ -154,7 +145,6 @@ def _tipo(lines: list[str]) -> str:
 
 
 def _title(card: Tag, lines: list[str]) -> str:
-    """Read the card heading, falling back to the first arriendo line."""
     for heading in card.find_all(("h1", "h2", "h3", "h4")):
         text = heading.get_text(" ", strip=True)
         if text:
@@ -166,7 +156,6 @@ def _title(card: Tag, lines: list[str]) -> str:
 
 
 def _infer_barrio(title: str) -> str:
-    """Infer a card neighborhood from the title until detail data is merged."""
     lowered = title.casefold()
     marker = "arriendo" if "arriendo" in lowered else "alquiler"
     if marker not in lowered:
@@ -179,7 +168,6 @@ def _infer_barrio(title: str) -> str:
 
 
 def _card_for_link(link: Tag) -> Tag | None:
-    """Find the smallest semantic card ancestor containing its rental offer."""
     candidate: Tag | None = None
     parent = link.parent
     while isinstance(parent, Tag):
@@ -196,12 +184,10 @@ def _card_for_link(link: Tag) -> Tag | None:
 
 
 def _is_marketplace(card: Tag) -> bool:
-    """Reject cards explicitly labeled MARKETPLACE because provenance is not first-party."""
     return any(line.casefold().strip() == "marketplace" for line in _lines(card))
 
 
 def _parse_card(card: Tag, url: str) -> Listing:
-    """Parse one accepted search card into the complete contract shape."""
     lines = _lines(card)
     row = _empty_listing()
     row["id"] = f"{PREFIX}-{_code_from_url(url)}"
@@ -216,8 +202,20 @@ def _parse_card(card: Tag, url: str) -> Listing:
     return row
 
 
+def _accept_search_card(row: Listing, card: Tag) -> bool:
+    if _is_marketplace(card):
+        logger.warning("Skipping marketplace listing %s", row["url"])
+        return False
+    if row["tipo"] not in _RESIDENTIAL_TYPES:
+        logger.warning("Skipping non-residential listing %s (%s)", row["url"], row["tipo"])
+        return False
+    if row["precio"] == 0:
+        logger.warning("Skipping sale-only listing %s", row["url"])
+        return False
+    return True
+
+
 def _page_numbers(soup: BeautifulSoup) -> set[int]:
-    """Read numeric page query values from pagination links."""
     pages: set[int] = set()
     for link in soup.find_all("a", href=True):
         for value in parse_qs(urlparse(str(link.get("href"))).query).get("page", []):
@@ -227,7 +225,6 @@ def _page_numbers(soup: BeautifulSoup) -> set[int]:
 
 
 def _parse_search_page(html: str) -> tuple[list[Listing], set[int], int]:
-    """Parse accepted cards, pagination values, and raw card count."""
     soup = BeautifulSoup(html, "html.parser")
     rows: list[Listing] = []
     seen: set[str] = set()
@@ -239,10 +236,9 @@ def _parse_search_page(html: str) -> tuple[list[Listing], set[int], int]:
         if card is None:
             continue
         seen.add(url)
-        if _is_marketplace(card):
-            logger.warning("Skipping marketplace listing %s", url)
-            continue
-        rows.append(_parse_card(card, url))
+        row = _parse_card(card, url)
+        if _accept_search_card(row, card):
+            rows.append(row)
     return rows, _page_numbers(soup), len(seen)
 
 
@@ -252,28 +248,28 @@ def parse_search_page(html: str) -> tuple[list[Listing], set[int]]:
 
 
 def scrape(ciudad: str = "medellin", sample_only: bool = False, max_pages: int | None = None, verbose: bool = False) -> list[Listing]:
-    """Scrape Medellin rental listings with card parsing followed by details."""
     if ciudad.casefold().replace("í", "i") != "medellin":
         logger.warning("Proser mapping is scoped to Medellín; got ciudad=%s", ciudad)
         return []
     page_limit = max_pages if max_pages is not None else (1 if sample_only else None)
     listings: list[Listing] = []
     seen: set[str] = set()
-    page = 1
-    while page_limit is None or page <= page_limit:
-        html = fetch_page(_page_url(page))
-        if not html:
-            break
-        page_rows, _, raw_count = _parse_search_page(html)
-        for row in page_rows:
-            if row["id"] not in seen:
-                listings.append(row)
-                seen.add(str(row["id"]))
-        if verbose:
-            logger.info("Proser page %d: %d accepted cards", page, len(page_rows))
-        if raw_count < _PER_PAGE:
-            break
-        page += 1
+    for source_type, source_url in RESIDENTIAL_SOURCE_URLS.items():
+        page = 1
+        while page_limit is None or page <= page_limit:
+            html = fetch_page(_page_url(source_url, page))
+            if not html:
+                break
+            page_rows, _, raw_count = _parse_search_page(html)
+            for row in page_rows:
+                if row["id"] not in seen:
+                    listings.append(row)
+                    seen.add(str(row["id"]))
+            if verbose:
+                logger.info("Proser %s page %d: %d accepted cards", source_type, page, len(page_rows))
+            if raw_count < _PER_PAGE:
+                break
+            page += 1
     if not listings:
         return []
 
@@ -286,6 +282,9 @@ def scrape(ciudad: str = "medellin", sample_only: bool = False, max_pages: int |
             logger.warning("Dropping %s; detail fields were not fetched", row["id"])
             continue
         if not merge_detail(row, parse_detail_page(html, url)):
+            continue
+        if row["tipo"] not in _RESIDENTIAL_TYPES:
+            logger.warning("Dropping %s after detail type guard (%s)", row["id"], row["tipo"])
             continue
         warnings = validate(row)
         if verbose:
