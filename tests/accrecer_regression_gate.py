@@ -26,6 +26,7 @@ EXPECTED_PORTALS_13 = [
     "albertoalvarez",
     "alnago",
     "arrendamientosdelnorte",
+    "arrendamientoselcastillo",
     "arrendamientosmonserrate",
     "arrendamientossantafe",
     "arrendamientosvillacruz",

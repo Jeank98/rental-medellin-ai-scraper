@@ -9,7 +9,7 @@ from scrape.orchestrator import run_pipeline
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run all 12 portal scrapers with orchestration")
+    parser = argparse.ArgumentParser(description="Run all 14 portal scrapers with orchestration")
     parser.add_argument("--workers", type=int, default=4, help="Max concurrent scrapers (default: 4)")
     parser.add_argument("--ciudad", default="medellin", help="City filter")
     parser.add_argument("--skip-backup", action="store_true", help="Skip DB backup phase")
