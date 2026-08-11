@@ -18,6 +18,8 @@ Export real rental listings from the PostgreSQL database to a Google Sheets spre
 
 Exported columns: `id`, `portal`, `tipo`, `precio`, `area`, `habitaciones`, `banos`, `parqueaderos`, `estrato`, `barrio`, `url`, `ciudad`, `status`, `scraped_at`
 
+> **Run after a full scrape**: the spreadsheet is fed from PostgreSQL, so export after a complete scrape (e.g. `scripts/run_all.py`), not from a capped `--sample-only` CSV.
+
 The script can operate in two modes:
 
 - **In-place update**: If `GOOGLE_SHEET_ID` is set in `.env`, the target sheet is cleared and repopulated with fresh DB data on each run — the sheet acts as a live mirror of the database.
@@ -75,6 +77,8 @@ uv run python scripts/export_to_sheets.py --city medellin
 ```bash
 uv run python scripts/export_to_sheets.py --portal maxibienes
 ```
+
+`--portal accrecer` exports only Acrecer's rows.
 
 ### Custom sheet title
 

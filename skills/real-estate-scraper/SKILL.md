@@ -50,7 +50,7 @@ Output columns (always 11, in this order):
 
 ### Phase 1: Discovery (single page)
 
-**Check `reference/portal-field-mappings.md` first** — if this portal already has a file in `reference/portals/` (e.g., `reference/portals/maxibienes.md`), load it immediately. The file tells you the card selector, pagination URL pattern, field mappings, and all gotchas. **If the portal file exists, SKIP Phase 1 Discovery entirely — go directly to Phase 2 (Bulk Scrape).** Only run Discovery for brand-new portals not in the index.
+**Check `reference/portal-field-mappings.md` first** — if this portal already has a file in `reference/portals/` (e.g., `reference/portals/maxibienes.md` or `reference/portals/accrecer.md`), load it immediately. The file tells you the card selector, pagination URL pattern, field mappings, and all gotchas. **If the portal file exists, SKIP Phase 1 Discovery entirely — go directly to Phase 2 (Bulk Scrape).** Only run Discovery for brand-new portals not in the index.
 
 #### Step 1.1 — Fetch page 1 as text
 
@@ -204,3 +204,4 @@ Show first 3 and last 3 rows.
 - **Infinite scroll**: `scrapling_open_session` + `scrapling_fetch` + click "load more"
 - **Two-phase portals**: Cards missing fields → collect detail URLs → `scrapling_bulk_get` detail pages
 - **Hidden JSON**: Some portals have JSON in `<textarea>` — visible in text output, parse inline
+- **RSC/embedded JSON payload** (e.g. Acrecer): listings live in `self.__next_f.push(...)` RSC segments containing a `searchResults` array, not in CSS cards. Load the portal reference mapping and extract by payload key names (see `docs/variable-detection.md`); paginate directly with `?page=N` using `totalRecords` / `recordsPerPage`. Keep it one-phase when sampled detail pages add no contract fields. Hidden UI icons are conditional presentation, not missing data
