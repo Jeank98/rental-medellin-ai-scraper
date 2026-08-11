@@ -62,6 +62,25 @@ class TestSearchCardParsing(unittest.TestCase):
         self.assertEqual(rows[1]["parqueaderos"], 0)
         self.assertNotIn("LPI-10299999", {row["id"] for row in rows})
 
+    def test_casa_comercial_never_reaches_detail_fetching(self):
+        rows = parse_search_page(_load("search_page_casa_commercial.html"))
+
+        self.assertEqual([row["id"] for row in rows], ["LPI-10017303", "LPI-9938605"])
+        self.assertEqual(rows[0]["tipo"], "")
+        self.assertEqual(rows[1]["tipo"], "casa")
+
+        with (
+            mock.patch("scrape.lapalma._phase_a", return_value=rows),
+            mock.patch("scrape.lapalma.bulk_fetch", return_value=[]) as bulk_mock,
+        ):
+            result = scrape()
+
+        self.assertEqual([row["id"] for row in result], ["LPI-9938605"])
+        self.assertEqual(
+            bulk_mock.call_args.args[0],
+            ["https://lapalmainmobiliaria.com.co/casa-arriendo-laureles-medellin/9938605"],
+        )
+
 
 class TestDetailParsing(unittest.TestCase):
     """Detail pages supply the fields absent from cards."""

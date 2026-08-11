@@ -126,7 +126,6 @@ def _unique_listing_urls(node) -> set[str]:
 
 
 def _card_for_anchor(anchor):
-    """Find the smallest ancestor containing one complete listing card."""
     for parent in anchor.parents:
         if getattr(parent, "name", "") != "div":
             continue
@@ -144,7 +143,9 @@ def _is_unavailable(card) -> bool:
 
 
 def _extract_type(lines: list[str]) -> str:
-    """Normalize the first recognized property type visible on a card."""
+    text = _fold(" ".join(lines))
+    if "CASA COMERCIAL" in text or "USO COMERCIAL" in text:
+        return ""
     for line in lines:
         folded = _fold(line)
         for type_word in _TYPE_WORDS:
@@ -154,7 +155,6 @@ def _extract_type(lines: list[str]) -> str:
 
 
 def _extract_card(card, url: str) -> Listing:
-    """Build one card row, leaving detail-only fields at proven defaults."""
     lines = _lines(card)
     listing = dict.fromkeys(_COLUMNS, "")
     listing.update(
