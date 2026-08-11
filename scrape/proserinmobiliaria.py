@@ -38,6 +38,7 @@ _SEARCH_TAIL = (
     "&for_temporary_rent=0&for_transfer=0&lax_business_type=1"
 )
 _TIPOS = _RESIDENTIAL_TYPES | {"local", "oficina", "bodega", "lote", "finca"}
+_COMMERCIAL_USE_MARKERS = ("casa comercial", "uso comercial")
 
 
 def _page_url(source_url: str, page: int) -> str:
@@ -187,6 +188,13 @@ def _is_marketplace(card: Tag) -> bool:
     return any(line.casefold().strip() == "marketplace" for line in _lines(card))
 
 
+def _is_commercial_use(card: Tag, url: str) -> bool:
+    card_text = " ".join(_lines(card)).casefold()
+    path_text = urlparse(url).path.casefold().replace("-", " ").replace("_", " ")
+    haystack = f"{card_text} {path_text}"
+    return any(marker in haystack for marker in _COMMERCIAL_USE_MARKERS)
+
+
 def _parse_card(card: Tag, url: str) -> Listing:
     lines = _lines(card)
     row = _empty_listing()
@@ -205,6 +213,9 @@ def _parse_card(card: Tag, url: str) -> Listing:
 def _accept_search_card(row: Listing, card: Tag) -> bool:
     if _is_marketplace(card):
         logger.warning("Skipping marketplace listing %s", row["url"])
+        return False
+    if _is_commercial_use(card, str(row["url"])):
+        logger.warning("Skipping commercial-use listing %s", row["url"])
         return False
     if row["tipo"] not in _RESIDENTIAL_TYPES:
         logger.warning("Skipping non-residential listing %s (%s)", row["url"], row["tipo"])

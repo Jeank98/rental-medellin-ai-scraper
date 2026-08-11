@@ -58,6 +58,7 @@ Before queuing a detail URL, require all of the following:
 - normalized `tipo` is `apartamento`, `casa`, or `apartaestudio`;
 - the card has a non-zero amount labeled `Alquiler`;
 - the card is not labeled `MARKETPLACE`.
+- the card text and URL do not contain `CASA COMERCIAL` or `USO COMERCIAL`.
 
 Sale-only cards are rejected even if their URL contains a numeric code. A
 mixed `Venta`/`Alquiler` card with a sale slug is retained only because its
@@ -82,6 +83,8 @@ required before emitting numeric zero for that field.
 - Cards labeled `MARKETPLACE` are skipped by default. The official site marks
   these records separately, but first-party ownership cannot be established
   from the Proser page alone.
+- Cards explicitly marked `CASA COMERCIAL` or `USO COMERCIAL` are skipped
+  before detail fetching, even when the generic type normalizes to `casa`.
 - The normalized-type guard runs again after detail merge, so a commercial
   detail cannot enter the final contract even if a source card is malformed.
 - Fractional measurements are normalized with `Decimal` and explicit
