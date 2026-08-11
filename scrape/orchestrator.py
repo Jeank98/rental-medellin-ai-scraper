@@ -1,5 +1,5 @@
 """
-Orchestrator module — 5-phase pipeline for scraping all 14 Colombian real
+Orchestrator module — 5-phase pipeline for scraping all 18 Colombian real
 estate portals in parallel with health checks, validation, and DB backup.
 """
 
