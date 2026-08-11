@@ -89,7 +89,8 @@ rental-medellin-ai-scraper/
 │   ├── metrocasas.py                # MTC scraper
 │   ├── santillana.py                # STL scraper
 │   ├── accrecer.py                  # AC scraper (single-phase RSC)
-│   └── arrendamientoselcastillo.py  # AEC scraper (Livewire load-more + detail)
+│   ├── arrendamientoselcastillo.py  # AEC scraper (Livewire load-more + detail)
+│   └── lapalma.py                   # LPI scraper (two-phase detail pages)
 ├── scripts/                         # Thin CLI entry points
 │   ├── run_all.py                   # Orchestrator: runs all 14 portals in parallel
 │   ├── scrape_maxibienes.py
@@ -106,6 +107,7 @@ rental-medellin-ai-scraper/
 │   ├── scrape_santillana.py
 │   ├── scrape_accrecer.py
 │   ├── scrape_arrendamientoselcastillo.py
+│   ├── scrape_lapalma.py
 │   ├── setup_db.py                  # Create listings table
 │   ├── test_save.py                 # Test insert and read-back
 │   ├── insert_listings.py           # Bulk insert from JSON
@@ -160,6 +162,7 @@ rental-medellin-ai-scraper/
 | 12 | Santillana | `STL` | Two-phase (detail pages) | `scrape_santillana.py` |
 | 13 | Acrecer | `AC` | Single-phase (RSC) | `scrape_accrecer.py` |
 | 14 | Arrendamientos El Castillo | `AEC` | Two-phase (Livewire + detail) | `scrape_arrendamientoselcastillo.py` |
+| 15 | La Palma Inmobiliaria | `LPI` | Two-phase (detail pages) | `scrape_lapalma.py` |
 
 ## Requirements
 

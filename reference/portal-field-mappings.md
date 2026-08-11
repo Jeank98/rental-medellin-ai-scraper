@@ -20,3 +20,4 @@ Discovered field-to-column mappings for each scraped portal. Each portal has its
 | Monserrate | `MNS` | [arrendamientosmonserrate.md](portals/arrendamientosmonserrate.md) | Two-phase (detail pages) | ✅ Done |
 | Acrecer | `AC` | [accrecer.md](portals/accrecer.md) | Single-phase (RSC) | ✅ Implemented |
 | Arrendamientos El Castillo | `AEC` | [arrendamientoselcastillo.md](portals/arrendamientoselcastillo.md) | Two-phase (Livewire load-more → detail) | ✅ Implemented |
+| La Palma Inmobiliaria | `LPI` | [lapalma.md](portals/lapalma.md) | Two-phase (detail pages) | ✅ Implemented |
