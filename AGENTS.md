@@ -22,7 +22,7 @@ All 14 portals have standalone executable scripts at `scripts/scrape_{portal}.py
 | REST API | 1 | ADN (Arrendamientos del Norte) |
 | GraphQL | 1 | Coninsa |
 | Single-phase HTML | 6 | Maxibienes, AlbertoAlvarez, MerinoHermanos, Habitamos, Metrocasas, Acrecer |
-| Two-phase HTML | 6 | SantaFe, Santillana, Alnago, Monserrate, La Palma, Proser Inmobiliaria |
+| Two-phase HTML | 7 | SantaFe, Santillana, Alnago, Monserrate, La Palma, Proser Inmobiliaria, Zitios |
 | Load More (JS) | 1 | VillaCruz |
 
 **Per-portal ID formats** (each portal uses its own ID scheme):
@@ -43,6 +43,7 @@ All 14 portals have standalone executable scripts at `scripts/scrape_{portal}.py
 | Acrecer | AC | AC-{numeric} | AC-12345 |
 | La Palma | LPI | LPI-{numeric} | LPI-10255187 |
 | Proser Inmobiliaria | PRO | PRO-{numeric} | PRO-10163884 |
+| Zitios | ZIT | ZIT-{numeric} | ZIT-10188009 |
 
 ### Key files
 | File | Purpose |

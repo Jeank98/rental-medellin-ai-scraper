@@ -22,3 +22,4 @@ Discovered field-to-column mappings for each scraped portal. Each portal has its
 | Arrendamientos El Castillo | `AEC` | [arrendamientoselcastillo.md](portals/arrendamientoselcastillo.md) | Two-phase (Livewire load-more → detail) | ✅ Implemented |
 | La Palma Inmobiliaria | `LPI` | [lapalma.md](portals/lapalma.md) | Two-phase (detail pages) | ✅ Implemented |
 | Proser Inmobiliaria | `PRO` | [proserinmobiliaria.md](portals/proserinmobiliaria.md) | Two-phase (detail pages) | ✅ Implemented |
+| Zitios Inmobiliaria | `ZIT` | [zitios.md](portals/zitios.md) | Two-phase (paginated cards → detail) | ✅ Implemented |

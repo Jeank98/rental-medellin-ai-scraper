@@ -91,7 +91,8 @@ rental-medellin-ai-scraper/
 │   ├── accrecer.py                  # AC scraper (single-phase RSC)
 │   ├── arrendamientoselcastillo.py  # AEC scraper (Livewire load-more + detail)
 │   ├── lapalma.py                   # LPI scraper (two-phase detail pages)
-│   └── proserinmobiliaria.py        # PRO scraper (two-phase)
+│   ├── proserinmobiliaria.py        # PRO scraper (two-phase)
+│   └── zitios.py                    # ZIT scraper (two-phase paginated HTML)
 ├── scripts/                         # Thin CLI entry points
 │   ├── run_all.py                   # Orchestrator: runs all 14 portals in parallel
 │   ├── scrape_maxibienes.py
@@ -110,6 +111,7 @@ rental-medellin-ai-scraper/
 │   ├── scrape_arrendamientoselcastillo.py
 │   ├── scrape_lapalma.py
 │   ├── scrape_proserinmobiliaria.py
+│   ├── scrape_zitios.py
 │   ├── setup_db.py                  # Create listings table
 │   ├── test_save.py                 # Test insert and read-back
 │   ├── insert_listings.py           # Bulk insert from JSON
@@ -166,6 +168,7 @@ rental-medellin-ai-scraper/
 | 14 | Arrendamientos El Castillo | `AEC` | Two-phase (Livewire + detail) | `scrape_arrendamientoselcastillo.py` |
 | 15 | La Palma Inmobiliaria | `LPI` | Two-phase (detail pages) | `scrape_lapalma.py` |
 | 16 | Proser Inmobiliaria | `PRO` | Two-phase (detail pages) | `scrape_proserinmobiliaria.py` |
+| 17 | Zitios Inmobiliaria | `ZIT` | Two-phase (paginated cards → detail) | `scrape_zitios.py` |
 
 ## Requirements
 
