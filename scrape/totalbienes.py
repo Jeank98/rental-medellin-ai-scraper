@@ -1,13 +1,10 @@
 """Total Bienes SAS scraper — canonical one-phase HTML pagination.
 
-The numbered Medellin routes are the crawl boundary. The page-1 load-more
-control is intentionally not clicked: the baseline assessment showed it
-repeating page-2 cards and exposing one additional record. Keeping the two
-literal routes makes the inventory finite and reproducible; IDs are still
-deduplicated defensively as live inventory moves between routes.
-
-Field extraction walks generic property links and rendered text. It does not
-depend on portal CSS classes or detail-page requests.
+The two numbered Medellin routes are the crawl boundary; the page-1 load-more
+control is intentionally not clicked (it repeats page-2 cards). IDs are still
+deduplicated defensively as live inventory moves between routes. Field
+extraction walks generic property links and rendered text, with no dependency
+on portal CSS classes or detail-page requests.
 """
 
 import logging
