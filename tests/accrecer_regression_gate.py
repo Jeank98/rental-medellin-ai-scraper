@@ -34,6 +34,7 @@ EXPECTED_PORTALS_14 = [
     "habitamos",
     "merinohermanos",
     "metrocasas",
+    "proserinmobiliaria",
     "santillana",
     "lapalmainmobiliaria",
 ]
