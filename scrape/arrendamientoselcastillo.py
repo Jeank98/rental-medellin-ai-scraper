@@ -16,9 +16,12 @@ from scrape.validator import validate
 
 logger = logging.getLogger(__name__)
 
-_SEARCH_URL: Final = (
-    "https://www.arrendamientoselcastillo.com.co/resultados?gestion=Arriendo"
+_SEARCH_URLS: Final = (
+    "https://www.arrendamientoselcastillo.com.co/resultados?gestion=Arriendo&tipo=Apartamentos",
+    "https://www.arrendamientoselcastillo.com.co/resultados?gestion=Arriendo&tipo=Casas",
+    "https://www.arrendamientoselcastillo.com.co/resultados?gestion=Arriendo&tipo=Apartaestudios",
 )
+_RESIDENTIAL_TYPES: Final = frozenset({"apartamento", "casa", "apartaestudio"})
 
 
 def scrape(
@@ -36,14 +39,27 @@ def scrape(
     def page_action(page: Page) -> None:
         scroll_to_load_all(page, batch_limit)
 
-    rendered = stealthy_fetch_with_action(_SEARCH_URL, page_action)
-    if not rendered:
-        logger.warning("AEC: search page returned no rendered HTML")
-        return []
+    by_id: dict[str, Listing] = {}
+    for search_url in _SEARCH_URLS:
+        rendered = stealthy_fetch_with_action(search_url, page_action)
+        if not rendered:
+            logger.warning("AEC: search page returned no rendered HTML: %s", search_url)
+            continue
+        for listing in parse_search_html(rendered):
+            by_id.setdefault(listing["id"], listing)
 
-    listings = parse_search_html(rendered)
+    # Keep the guard after normalization so commercial source cards never reach detail fetches.
+    listings = [
+        listing for listing in by_id.values() if listing["tipo"] in _RESIDENTIAL_TYPES
+    ]
     if sample_only:
-        listings = listings[:3]
+        samples = []
+        for property_type in ("apartamento", "casa", "apartaestudio"):
+            for listing in listings:
+                if listing["tipo"] == property_type:
+                    samples.append(listing)
+                    break
+        listings = samples[:3]
 
     detail_urls = list(dict.fromkeys(row["url"] for row in listings if row["url"]))
     details = {url: html for url, html in bulk_fetch(detail_urls) if html}

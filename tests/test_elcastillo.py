@@ -7,6 +7,7 @@ from unittest import mock
 
 import scripts.scrape_arrendamientoselcastillo as cli
 from scrape.arrendamientoselcastillo import (
+    _SEARCH_URLS,
     parse_detail_estrato,
     parse_search_html,
     scrape,
@@ -119,12 +120,13 @@ def test_scrape_merges_detail_stratum_and_deduplicates() -> None:
     detail_map = {
         row["url"]: (detail_html if row["id"] == "AEC-49041" else sparse_detail)
         for row in parse_search_html(search_html)
+        if row["tipo"] != "local"
     }
 
     with (
         mock.patch(
             "scrape.arrendamientoselcastillo.stealthy_fetch_with_action",
-            return_value=search_html,
+            side_effect=[search_html, "", ""],
         ) as search_fetch,
         mock.patch(
             "scrape.arrendamientoselcastillo.bulk_fetch",
@@ -133,12 +135,47 @@ def test_scrape_merges_detail_stratum_and_deduplicates() -> None:
     ):
         rows = scrape(sample_only=False)
 
-    assert len(rows) == 3
+    assert len(rows) == 2
     assert rows[0]["estrato"] == 5
     assert rows[1]["estrato"] == 0
-    search_fetch.assert_called_once()
+    assert search_fetch.call_count == len(_SEARCH_URLS)
     detail_fetch.assert_called_once()
     assert list(rows[0]) == CANONICAL
+
+
+def test_residential_sources_filter_commercial_before_detail_phase() -> None:
+    search_html = _load("search_mixed.html")
+    residential = parse_search_html(search_html)[:3]
+    details = [(row["url"], _load("detail_49041.html")) for row in residential]
+
+    with (
+        mock.patch(
+            "scrape.arrendamientoselcastillo.stealthy_fetch_with_action",
+            return_value=search_html,
+        ) as search_fetch,
+        mock.patch(
+            "scrape.arrendamientoselcastillo.bulk_fetch",
+            return_value=details,
+        ) as detail_fetch,
+    ):
+        rows = scrape(sample_only=False)
+
+    assert {row["tipo"] for row in rows} == {
+        "apartamento",
+        "casa",
+        "apartaestudio",
+    }
+    assert {row["id"] for row in rows} == {
+        "AEC-49041",
+        "AEC-33011",
+        "AEC-17307",
+    }
+    assert [call.args[0] for call in search_fetch.call_args_list] == list(_SEARCH_URLS)
+    detail_urls = detail_fetch.call_args.args[0]
+    assert detail_urls == [row["url"] for row in residential]
+    assert all("local-enarriendo" not in url for url in detail_urls)
+    assert all("bodega-enarriendo" not in url for url in detail_urls)
+    assert all("oficina-enarriendo" not in url for url in detail_urls)
 
 
 def test_sample_cli_does_not_write_outputs() -> None:
@@ -154,7 +191,7 @@ def test_sample_cli_does_not_write_outputs() -> None:
     with (
         mock.patch(
             "scrape.arrendamientoselcastillo.stealthy_fetch_with_action",
-            return_value=_load("search_page.html"),
+            return_value=_load("search_mixed.html"),
         ),
         mock.patch(
             "scrape.arrendamientoselcastillo.bulk_fetch",
@@ -169,3 +206,6 @@ def test_sample_cli_does_not_write_outputs() -> None:
     csv_writer.assert_not_called()
     db_writer.assert_not_called()
     assert "Sample: 3 listing(s) extracted" in stdout.getvalue()
+    assert "AEC-49041" in stdout.getvalue()
+    assert "AEC-33011" in stdout.getvalue()
+    assert "AEC-17307" in stdout.getvalue()

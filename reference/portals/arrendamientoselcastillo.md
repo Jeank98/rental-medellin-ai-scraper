@@ -1,12 +1,23 @@
 # Arrendamientos El Castillo (`AEC`)
 
-- **URL**: `https://www.arrendamientoselcastillo.com.co/resultados?gestion=Arriendo`
+- **URL sources**: Official rental routes filtered by residential type
 - **Type**: Two-phase browser-rendered Livewire search plus detail enrichment
 - **Listing card**: Each card exposes `COD`, current price, type, area, alcobas, baños, parqueaderos, barrio, and a detail link
-- **Initial batch**: 36 unique cards in the verified sample
-- **Inventory**: The page reported 497 rental results at assessment time
-- **Pagination**: IntersectionObserver dispatches Livewire `load-more`; scroll until the visible COD set stops growing. The URL does not change.
+- **Pagination**: Each route uses the same IntersectionObserver/Livewire `load-more`; scroll until that route's visible COD set stops growing. The URL does not change.
 - **Permalink**: Absolute `/detalle-propiedad/{slug}-{COD}` URL from the card; preserve the visible COD as `AEC-{COD}`
+
+## Residential URL sources
+
+| Normalized type | Exact official URL parameter | Verified result count | Observed card types |
+|---|---|---:|---|
+| `apartamento` | `?gestion=Arriendo&tipo=Apartamentos` | 143 | `apartamento` only |
+| `casa` | `?gestion=Arriendo&tipo=Casas` | 54 | `casa` only |
+| `apartaestudio` | `?gestion=Arriendo&tipo=Apartaestudios` | 54 | `apartaestudio` only |
+
+The scraper unions these three sources by `AEC-{COD}` before Phase B. The final
+normalized-type guard accepts only these three values. No additional residential
+subtype was observed or accepted; `Casas Fincas`, `Casas Locales`, and all
+commercial type routes remain excluded.
 
 | Column | Source | Notes |
 |---|---|---|
@@ -24,7 +35,7 @@
 
 ## Zero genuineness
 
-- Search cards visibly emit `0 Alcobas` and `0 parq.` for sampled commercial records; these are source values, not inferred defaults.
+- Search cards visibly emit `0 Alcobas` and `0 parq.` for commercial records; these source values are filtered before detail requests.
 - Search cards do not emit `Estrato`; detail pages do. A fetched detail without an Estrato label yields `0`.
 - A failed detail fetch also leaves `estrato=0` and is reported through the scraper's existing validation/logging path.
 
@@ -32,4 +43,4 @@
 
 - Full extraction requires a browser-backed Livewire scroll loop rather than numbered page URLs.
 - Every unique card requires a detail request for complete `estrato` coverage.
-- Broad `Arriendo` results include `local`, `oficina`, and `bodega` records as well as residential listings.
+- The unfiltered `gestion=Arriendo` route includes `local`, `oficina`, and `bodega` records; do not use it as a production source.
