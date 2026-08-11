@@ -23,3 +23,4 @@ Discovered field-to-column mappings for each scraped portal. Each portal has its
 | La Palma Inmobiliaria | `LPI` | [lapalma.md](portals/lapalma.md) | Two-phase (detail pages) | ✅ Implemented |
 | Proser Inmobiliaria | `PRO` | [proserinmobiliaria.md](portals/proserinmobiliaria.md) | Two-phase (detail pages) | ✅ Implemented |
 | Zitios Inmobiliaria | `ZIT` | [zitios.md](portals/zitios.md) | Two-phase (paginated cards → detail) | ✅ Implemented |
+| Total Bienes SAS | `TB` | [totalbienes.md](portals/totalbienes.md) | Single-phase (numbered HTML pagination) | ✅ Implemented |

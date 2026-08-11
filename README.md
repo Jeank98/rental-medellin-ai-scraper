@@ -92,7 +92,8 @@ rental-medellin-ai-scraper/
 │   ├── arrendamientoselcastillo.py  # AEC scraper (Livewire load-more + detail)
 │   ├── lapalma.py                   # LPI scraper (two-phase detail pages)
 │   ├── proserinmobiliaria.py        # PRO scraper (two-phase)
-│   └── zitios.py                    # ZIT scraper (two-phase paginated HTML)
+│   ├── zitios.py                    # ZIT scraper (two-phase paginated HTML)
+│   └── totalbienes.py               # TB scraper (single-phase numbered HTML)
 ├── scripts/                         # Thin CLI entry points
 │   ├── run_all.py                   # Orchestrator: runs all 14 portals in parallel
 │   ├── scrape_maxibienes.py
@@ -112,6 +113,7 @@ rental-medellin-ai-scraper/
 │   ├── scrape_lapalma.py
 │   ├── scrape_proserinmobiliaria.py
 │   ├── scrape_zitios.py
+│   ├── scrape_totalbienes.py
 │   ├── setup_db.py                  # Create listings table
 │   ├── test_save.py                 # Test insert and read-back
 │   ├── insert_listings.py           # Bulk insert from JSON
@@ -138,7 +140,7 @@ rental-medellin-ai-scraper/
 |---|--------|------|-------------|
 | 1 | `id` | str | Composite key `{PREFIX}-{CODE}` |
 | 2 | `portal` | str | Portal identifier |
-| 3 | `tipo` | str | `apartamento`, `casa`, `apartaestudio` |
+| 3 | `tipo` | str | Normalized property type, including `apartamento`, `casa`, `apartaestudio`, and `local` |
 | 4 | `precio` | int | Rental price (digits only) |
 | 5 | `area` | int | Square meters |
 | 6 | `habitaciones` | int | Bedrooms |
@@ -169,6 +171,7 @@ rental-medellin-ai-scraper/
 | 15 | La Palma Inmobiliaria | `LPI` | Two-phase (detail pages) | `scrape_lapalma.py` |
 | 16 | Proser Inmobiliaria | `PRO` | Two-phase (detail pages) | `scrape_proserinmobiliaria.py` |
 | 17 | Zitios Inmobiliaria | `ZIT` | Two-phase (paginated cards → detail) | `scrape_zitios.py` |
+| 18 | Total Bienes SAS | `TB` | Single-phase (numbered HTML) | `scrape_totalbienes.py` |
 
 ## Requirements
 
