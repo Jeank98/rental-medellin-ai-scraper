@@ -14,6 +14,7 @@ from scrape.report import generate_report
 
 PORTALS = {
     "accrecer": {"module": "accrecer", "min_listings": 12},
+    "totalbienes": {"module": "totalbienes", "min_listings": 10},
     "maxibienes": {"module": "maxibienes", "min_listings": 30},
     "albertoalvarez": {"module": "albertoalvarez", "min_listings": 50},
     "alnago": {"module": "alnago", "min_listings": 5},
