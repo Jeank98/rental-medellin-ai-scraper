@@ -6,6 +6,7 @@ from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
 from scrape.lapalma import (
+    RESIDENTIAL_TYPES,
     build_page_url,
     parse_detail_page,
     parse_search_page,
@@ -81,12 +82,12 @@ class TestDetailParsing(unittest.TestCase):
 class TestTwoPhasePagination(unittest.TestCase):
     """Phase A paginates safely, then Phase B merges only detail fields."""
 
-    def test_preserves_filters_deduplicates_and_stops_at_empty_page(self):
-        search_pages = [
-            _load("search_page.html"),
-            _load("search_page_2.html"),
-            _load("empty_page.html"),
-        ]
+    def test_unions_type_sources_deduplicates_and_excludes_commercial_detail(self):
+        source_pages = {
+            "2": _load("search_page.html"),
+            "1": _load("search_page_2.html"),
+            "14": _load("search_page_commercial_leak.html"),
+        }
         detail_html = {
             "https://lapalmainmobiliaria.com.co/apartamento-arriendo-villa-hermosa-medellin/10255187": _load(
                 "detail_villa_hermosa.html"
@@ -96,15 +97,17 @@ class TestTwoPhasePagination(unittest.TestCase):
             ),
         }
 
+        def fetch_by_type(url: str) -> str:
+            query = parse_qs(urlparse(url).query)
+            return source_pages[query["id_property_type"][0]]
+
         with (
-            mock.patch(
-                "scrape.lapalma.fetch_page", side_effect=search_pages
-            ) as fetch_mock,
+            mock.patch("scrape.lapalma.fetch_page", side_effect=fetch_by_type) as fetch_mock,
             mock.patch(
                 "scrape.lapalma.bulk_fetch", return_value=list(detail_html.items())
             ) as bulk_mock,
         ):
-            rows = scrape(sample_only=True)
+            rows = scrape(max_pages=1)
 
         self.assertEqual(
             [row["id"] for row in rows],
@@ -112,21 +115,18 @@ class TestTwoPhasePagination(unittest.TestCase):
                 "LPI-10255187",
                 "LPI-10254920",
                 "LPI-9938605",
+                "LPI-10236679",
             ],
         )
-        self.assertEqual(rows[0]["estrato"], 3)
-        self.assertEqual(rows[0]["barrio"], "Villa Hermosa")
-        self.assertEqual(rows[1]["estrato"], 0)
-        self.assertEqual(rows[1]["barrio"], "")
-        self.assertEqual(rows[2]["estrato"], 5)
-        self.assertEqual(rows[2]["barrio"], "Laureles")
+        self.assertTrue({row["tipo"] for row in rows} <= set(RESIDENTIAL_TYPES))
         self.assertEqual(len({row["id"] for row in rows}), len(rows))
 
         requested_urls = [call.args[0] for call in fetch_mock.call_args_list]
         self.assertEqual(len(requested_urls), 3)
-        for page, url in enumerate(requested_urls, start=1):
+        for property_type, url in zip(RESIDENTIAL_TYPES, requested_urls):
             query = parse_qs(urlparse(url).query)
-            self.assertEqual(query["page"], [str(page)])
+            self.assertEqual(query["id_property_type"], [{"apartamento": "2", "casa": "1", "apartaestudio": "14"}[property_type]])
+            self.assertEqual(query["page"], ["1"])
             self.assertEqual(query["id_city"], ["496"])
             self.assertEqual(query["business_type[0]"], ["for_rent"])
             self.assertEqual(query["order_by"], ["created_at"])
@@ -139,12 +139,51 @@ class TestTwoPhasePagination(unittest.TestCase):
 
         bulk_mock.assert_called_once()
         detail_urls = bulk_mock.call_args.args[0]
-        self.assertEqual(len(detail_urls), 3)
+        self.assertEqual(len(detail_urls), 4)
+        self.assertNotIn("/10075954", " ".join(detail_urls))
+        self.assertNotIn("/10299999", " ".join(detail_urls))
+
+    def test_each_type_stream_stops_at_empty_page(self):
+        def fetch_until_empty(url: str) -> str:
+            query = parse_qs(urlparse(url).query)
+            return _load("search_page.html") if query["page"] == ["1"] else _load("empty_page.html")
+
+        with (
+            mock.patch("scrape.lapalma.fetch_page", side_effect=fetch_until_empty) as fetch_mock,
+            mock.patch("scrape.lapalma.bulk_fetch", return_value=[]),
+        ):
+            rows = scrape()
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(fetch_mock.call_args_list), 6)
+
+    def test_final_residential_guard_runs_before_detail_batch(self):
+        residential = parse_search_page(_load("search_page.html"))[0]
+        commercial = dict(residential)
+        commercial.update({
+            "id": "LPI-10075954",
+            "tipo": "local",
+            "url": "https://lapalmainmobiliaria.com.co/local-arriendo-la-candelaria-medellin/10075954",
+        })
+
+        with (
+            mock.patch("scrape.lapalma._phase_a", return_value=[residential, commercial]),
+            mock.patch("scrape.lapalma.bulk_fetch", return_value=[]) as bulk_mock,
+        ):
+            rows = scrape()
+
+        self.assertEqual([row["id"] for row in rows], ["LPI-10255187"])
+        self.assertEqual(bulk_mock.call_args.args[0], [residential["url"]])
 
     def test_page_url_uses_official_rental_endpoint(self):
-        url = build_page_url(4)
-        self.assertEqual(urlparse(url).path, "/search")
-        self.assertEqual(parse_qs(urlparse(url).query)["page"], ["4"])
+        for property_type, property_id in {"apartamento": "2", "casa": "1", "apartaestudio": "14"}.items():
+            url = build_page_url(4, property_type=property_type)
+            self.assertEqual(urlparse(url).path, "/search")
+            query = parse_qs(urlparse(url).query)
+            self.assertEqual(query["page"], ["4"])
+            self.assertEqual(query["id_property_type"], [property_id])
+            self.assertEqual(query["id_city"], ["496"])
+            self.assertEqual(query["business_type[0]"], ["for_rent"])
 
 
 if __name__ == "__main__":

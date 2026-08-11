@@ -16,6 +16,8 @@ _BASE_URL = "https://lapalmainmobiliaria.com.co"
 _PORTAL = "lapalmainmobiliaria"
 _PREFIX = "LPI"
 _CITY_IDS = {"medellin": "496"}
+RESIDENTIAL_TYPES = ("apartamento", "casa", "apartaestudio")
+_TYPE_IDS = {"apartamento": "2", "casa": "1", "apartaestudio": "14"}
 _COLUMNS = ["id", "portal", "tipo", "precio", "area", "habitaciones", "banos", "parqueaderos", "estrato", "barrio", "url"]
 _TYPE_WORDS = ("APARTAESTUDIO", "APARTAMENTO", "BODEGA", "OFICINA", "LOCAL", "CASA", "FINCA", "LOTE")
 _UNAVAILABLE_WORDS = ("ALQUILADO", "ARRENDADO")
@@ -115,13 +117,11 @@ def _listing_url(href: str) -> str:
 
 
 def _code_from_url(url: str) -> str:
-    """Return the stable numeric property code from an official URL."""
     path = urlparse(url).path.rstrip("/")
     return path.rsplit("/", 1)[-1] if path else ""
 
 
 def _unique_listing_urls(node) -> set[str]:
-    """Collect unique numeric detail URLs below a node."""
     return {url for anchor in node.find_all("a", href=True) if (url := _listing_url(str(anchor.get("href", ""))))}
 
 
@@ -139,7 +139,6 @@ def _card_for_anchor(anchor):
 
 
 def _is_unavailable(card) -> bool:
-    """Detect source availability labels that mean the rental is no longer active."""
     lines = {_fold(line) for line in _lines(card)}
     return any(any(word in line for word in _UNAVAILABLE_WORDS) for line in lines)
 
@@ -216,8 +215,8 @@ def parse_detail_page(html: str) -> DetailFields:
     }
 
 
-def build_page_url(page: int, ciudad: str = "medellin") -> str:
-    """Build the official search URL while preserving all rental filters."""
+def build_page_url(page: int, ciudad: str = "medellin", property_type: str | None = None) -> str:
+    """Build the official search URL with optional residential type filtering."""
     city_id = _CITY_IDS.get(ciudad.casefold())
     if city_id is None:
         raise UnsupportedCityError(
@@ -235,6 +234,8 @@ def build_page_url(page: int, ciudad: str = "medellin") -> str:
         ("for_transfer", "0"),
         ("lax_business_type", "1"),
     ]
+    if property_type is not None:
+        query.insert(1, ("id_property_type", _TYPE_IDS[property_type]))
     return f"{_BASE_URL}/search?{urlencode(query)}"
 
 
@@ -242,29 +243,30 @@ def _phase_a(ciudad: str, max_pages: int | None, verbose: bool) -> list[Listing]
     """Walk pages until an empty or stale page and deduplicate source IDs."""
     listings: list[Listing] = []
     seen_ids: set[str] = set()
-    added_ids: set[str] = set()
-    page = 1
-    while max_pages is None or page <= max_pages:
-        html = fetch_page(build_page_url(page, ciudad))
-        if not html:
-            break
-        page_rows, source_ids = _parse_page(html)
-        new_source_ids = source_ids - seen_ids
-        if not new_source_ids:
-            break
-        seen_ids.update(source_ids)
-        for row in page_rows:
-            if row["id"] not in added_ids:
-                listings.append(row)
-                added_ids.add(row["id"])
-        if verbose:
-            logger.info("La Palma page %d: %d active cards", page, len(page_rows))
-        page += 1
+    for property_type in RESIDENTIAL_TYPES:
+        source_ids_seen: set[str] = set()
+        page = 1
+        while max_pages is None or page <= max_pages:
+            html = fetch_page(build_page_url(page, ciudad, property_type))
+            if not html:
+                break
+            page_rows, source_ids = _parse_page(html)
+            if not source_ids - source_ids_seen:
+                break
+            source_ids_seen.update(source_ids)
+            for row in page_rows:
+                if row["id"] not in seen_ids:
+                    listings.append(row)
+                    seen_ids.add(row["id"])
+            if verbose:
+                logger.info("La Palma %s page %d: %d cards", property_type, page, len(page_rows))
+            page += 1
     return listings
 
 
 def _phase_b(listings: list[Listing], verbose: bool) -> list[Listing]:
     """Fetch details and merge only estrato and explicit barrio."""
+    listings = [row for row in listings if row["tipo"] in RESIDENTIAL_TYPES]
     urls = [row["url"] for row in listings if row["url"]]
     detail_map = dict(bulk_fetch(urls))
     for row in listings:
