@@ -29,6 +29,7 @@ PORTALS = {
     "proserinmobiliaria": {"module": "proserinmobiliaria", "min_listings": 30},
     "santillana": {"module": "santillana", "min_listings": 30},
     "lapalmainmobiliaria": {"module": "lapalma", "min_listings": 50, "script": "lapalma"},
+    "zitios": {"module": "zitios", "min_listings": 50},
 }
 
 

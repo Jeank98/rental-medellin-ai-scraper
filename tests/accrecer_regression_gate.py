@@ -37,6 +37,7 @@ EXPECTED_PORTALS_14 = [
     "proserinmobiliaria",
     "santillana",
     "lapalmainmobiliaria",
+    "zitios",
 ]
 
 RESULT_EXPECTED_KEYS = {"portal", "healthy", "listings", "elapsed", "error"}
