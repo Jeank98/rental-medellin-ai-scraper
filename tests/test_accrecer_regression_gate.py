@@ -19,20 +19,20 @@ if sys_path not in __import__("sys").path:
 from accrecer_regression_gate import (  # type: ignore[import-untyped]
     cmd_compare,
     cmd_verify_protected,
-    EXPECTED_PORTALS_13,
+    EXPECTED_PORTALS_14,
     RESULT_EXPECTED_KEYS,
 )
 
 
 class TestKeysExact(unittest.TestCase):
-    """Given the expected portal list, then it matches the current 13-key registry."""
+    """Given the expected portal list, then it matches the current registry."""
 
     def test_expected_portals_match_current_registry(self):
         from scrape.orchestrator import PORTALS
         actual = sorted(PORTALS.keys())
-        expected = sorted(EXPECTED_PORTALS_13)
+        expected = sorted(EXPECTED_PORTALS_14)
         self.assertEqual(actual, expected,
-                         "EXPECTED_PORTALS_13 must match scrape.orchestrator.PORTALS")
+                         "EXPECTED_PORTALS_14 must match scrape.orchestrator.PORTALS")
 
 
 class TestHealthResultSchema(unittest.TestCase):

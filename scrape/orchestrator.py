@@ -27,6 +27,7 @@ PORTALS = {
     "merinohermanos": {"module": "merinohermanos", "min_listings": 70},
     "metrocasas": {"module": "metrocasas", "min_listings": 5},
     "santillana": {"module": "santillana", "min_listings": 30},
+    "lapalmainmobiliaria": {"module": "lapalma", "min_listings": 50, "script": "lapalma"},
 }
 
 
