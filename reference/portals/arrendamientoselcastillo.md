@@ -21,7 +21,7 @@ commercial type routes remain excluded.
 
 The verified production baseline is 251 active listings: 143 apartamentos, 54
 casas, and 54 apartaestudios. The orchestrator minimum is 225, allowing up to
-25 rows of inventory drift while flagging a loss of 26 or more.
+26 rows of inventory drift while flagging a loss of 27 or more.
 
 | Column | Source | Notes |
 |---|---|---|
