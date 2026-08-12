@@ -100,6 +100,12 @@ class TestTotalBienesCardParser(unittest.TestCase):
         self.assertEqual(row["area"], 65)
         self.assertEqual(row["estrato"], 4)
 
+    def test_commercial_use_houses_are_excluded_but_residential_house_remains(self):
+        rows = parse_search_page(_load_fixture("commercial_house.html"))
+
+        self.assertEqual([row["id"] for row in rows], ["TB-1803"])
+        self.assertEqual(rows[0]["tipo"], "casa")
+
 
 class TestTotalBienesPagination(unittest.TestCase):
     """The scraper unions residential routes with numbered city routes."""

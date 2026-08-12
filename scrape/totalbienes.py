@@ -32,6 +32,7 @@ RESIDENTIAL_TYPES: Final[frozenset[str]] = frozenset(
     {"apartamento", "casa", "apartaestudio"}
 )
 _ZERO_BEDROOM_TYPES: Final = frozenset({"local", "oficina", "bodega", "lote", "finca"})
+_COMMERCIAL_USE_MARKERS: Final = ("casa comercial", "uso comercial")
 
 
 class Listing(TypedDict):
@@ -167,6 +168,14 @@ def _extract_tipo(fragments: list[str]) -> str:
     return ""
 
 
+def _is_commercial_use(fragments: list[str], href: str) -> bool:
+    """Reject explicit commercial-use markers from card text or URL."""
+    card_text = " ".join(fragments).casefold()
+    url_text = href.casefold().replace("-", " ").replace("_", " ")
+    haystack = f"{card_text} {url_text}"
+    return any(marker in haystack for marker in _COMMERCIAL_USE_MARKERS)
+
+
 def _extract_barrio(fragments: list[str]) -> str:
     """Extract the neighborhood from a location fragment containing Medellin."""
     for fragment in fragments:
@@ -217,6 +226,8 @@ def _parse_card(card: Tag) -> Listing | None:
     """Parse one generic property anchor into the 11-column contract."""
     href = str(card.get("href", "")).strip()
     fragments = _fragments(card)
+    if _is_commercial_use(fragments, href):
+        return None
     listing = _empty_listing()
     listing["id"] = _property_id(href, fragments)
     if not listing["id"]:

@@ -42,7 +42,9 @@ between curated type pages and the city inventory.
 Rows from all five sources are unioned by `TB-{numeric}` and keep the first
 row seen. After normalization, only `apartamento`, `casa`, and
 `apartaestudio` may enter output; `local`, `oficina`, `bodega`, and other
-commercial types are discarded before final output.
+commercial types are discarded before final output. Cards marked `Casa
+Comercial` or `Uso Comercial` are also discarded from card text or URL, even
+when their normalized type is `casa`.
 
 ## Pagination Boundary
 
