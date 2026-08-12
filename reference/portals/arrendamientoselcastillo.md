@@ -19,6 +19,10 @@ normalized-type guard accepts only these three values. No additional residential
 subtype was observed or accepted; `Casas Fincas`, `Casas Locales`, and all
 commercial type routes remain excluded.
 
+The verified production baseline is 251 active listings: 143 apartamentos, 54
+casas, and 54 apartaestudios. The orchestrator minimum is 225, allowing up to
+25 rows of inventory drift while flagging a loss of 26 or more.
+
 | Column | Source | Notes |
 |---|---|---|
 | id | `COD: N` | `AEC-N`; matches detail `Código: N` |

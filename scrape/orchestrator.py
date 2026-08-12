@@ -19,7 +19,7 @@ PORTALS = {
     "albertoalvarez": {"module": "albertoalvarez", "min_listings": 50},
     "alnago": {"module": "alnago", "min_listings": 5},
     "arrendamientosdelnorte": {"module": "arrendamientosdelnorte", "min_listings": 100, "script": "adn"},
-    "arrendamientoselcastillo": {"module": "arrendamientoselcastillo", "min_listings": 300},
+    "arrendamientoselcastillo": {"module": "arrendamientoselcastillo", "min_listings": 225},
     "arrendamientosmonserrate": {"module": "arrendamientosmonserrate", "min_listings": 20, "script": "monserrate"},
     "arrendamientossantafe": {"module": "arrendamientossantafe", "min_listings": 30, "script": "asf"},
     "arrendamientosvillacruz": {"module": "arrendamientosvillacruz", "min_listings": 30, "script": "villacruz"},
