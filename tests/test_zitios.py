@@ -3,7 +3,15 @@
 from pathlib import Path
 from unittest import mock
 
-from scrape.zitios import _page_url, parse_detail_page, parse_search_page, scrape
+from scrape.zitios import (
+    DetailFields,
+    Listing,
+    _merge_detail,
+    _page_url,
+    parse_detail_page,
+    parse_search_page,
+    scrape,
+)
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "zitios"
 CANONICAL_COLUMNS = [
@@ -66,6 +74,71 @@ def test_detail_parser_recovers_contract_fields_and_proves_missing_garage() -> N
 
     sparse = parse_detail_page(_load("detail_10125019.html"))
     assert sparse["parqueaderos"] is None
+
+
+def test_detail_barrio_never_replaces_card_barrio_with_related_listing_metadata() -> None:
+    cases = (
+        ("ZIT-10135574", "Santa Monica", "Belen Fatima"),
+        ("ZIT-10226561", "Guayabal", "Estadio"),
+        ("ZIT-10065898", "Belen Fatima", "Estadio"),
+    )
+
+    for listing_id, card_barrio, detail_barrio in cases:
+        row: Listing = {
+            "id": listing_id,
+            "portal": "zitios",
+            "tipo": "apartamento",
+            "precio": 0,
+            "area": 0,
+            "habitaciones": 0,
+            "banos": 0,
+            "parqueaderos": 0,
+            "estrato": 0,
+            "barrio": card_barrio,
+            "url": "",
+        }
+        detail: DetailFields = {
+            "tipo": "",
+            "precio": 0,
+            "area": 0,
+            "habitaciones": 0,
+            "banos": 0,
+            "parqueaderos": None,
+            "estrato": 0,
+            "barrio": detail_barrio,
+        }
+
+        _merge_detail(row, detail)
+
+        assert row["barrio"] == card_barrio, listing_id
+
+    missing_card_barrio: Listing = {
+        "id": "ZIT-MISSING-BARRIO",
+        "portal": "zitios",
+        "tipo": "apartamento",
+        "precio": 0,
+        "area": 0,
+        "habitaciones": 0,
+        "banos": 0,
+        "parqueaderos": 0,
+        "estrato": 0,
+        "barrio": "",
+        "url": "",
+    }
+    detail_barrio: DetailFields = {
+        "tipo": "",
+        "precio": 0,
+        "area": 0,
+        "habitaciones": 0,
+        "banos": 0,
+        "parqueaderos": None,
+        "estrato": 0,
+        "barrio": "Laureles",
+    }
+
+    _merge_detail(missing_card_barrio, detail_barrio)
+
+    assert missing_card_barrio["barrio"] == "Laureles"
 
 
 def test_scrape_deduplicates_ids_merges_details_and_keeps_exact_contract() -> None:

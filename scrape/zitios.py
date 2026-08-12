@@ -266,7 +266,7 @@ def _merge_detail(row: Listing, detail: DetailFields) -> None:
             row[field] = detail[field]
     # A successful detail response proves an omitted garage label is source-absent.
     row["parqueaderos"] = detail["parqueaderos"] or 0
-    if detail["barrio"]:
+    if detail["barrio"] and not row["barrio"]:
         row["barrio"] = detail["barrio"]
 
 
