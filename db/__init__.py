@@ -109,12 +109,12 @@ def deactivate_listings(portal: str, ciudad: str):
             cur.execute(DEACTIVATE_SQL, {"portal": portal, "ciudad": ciudad})
 
 
-def insert_listings(rows: list[dict], ciudad: str = ""):
-    """Insert listings with per-row transaction isolation.
+def insert_listings(rows: list[dict], ciudad: str = "") -> int:
+    """Insert a complete portal batch atomically.
 
-    Each row's INSERT runs inside a SAVEPOINT so a single bad row does not
-    abort the entire batch. Empty/missing IDs are skipped with a warning
-    before any SQL is issued.
+    Each row's INSERT runs inside a SAVEPOINT while errors are collected.
+    Any invalid row aborts the outer transaction so the previous portal
+    snapshot remains active.
 
     ``ciudad`` is the city for the WHOLE batch and is passed explicitly
     (not read from row dicts). Portal scrapers historically did not include
@@ -125,16 +125,12 @@ def insert_listings(rows: list[dict], ciudad: str = ""):
 
     Contract:
         * Rows whose ``id`` is ``None``, empty, or whitespace-only are
-          skipped with a WARNING log and do not count toward the inserted
-          total.
-        * Rows that raise during INSERT are rolled back to their savepoint
-          and the loop continues. A WARNING is logged with the row's id
-          and the underlying error.
-        * All successfully-inserted rows are committed together in a single
-          outer transaction (committed by :func:`get_conn`'s context
-          manager). The function never partially-commits: either the whole
-          batch succeeds or the whole batch is rolled back on connection
-          failure.
+          reported as errors and abort the batch.
+        * Rows that raise during INSERT are rolled back to their savepoint,
+          reported, and abort the batch after inspection.
+        * All rows are committed together in a single outer transaction. The
+          function never partially-commits: either the whole batch succeeds
+          or the whole batch is rolled back.
         * A summary log line is emitted on completion with the totals.
 
     Args:
@@ -200,10 +196,16 @@ def insert_listings(rows: list[dict], ciudad: str = ""):
                     cur.execute(f"RELEASE SAVEPOINT {sp_name}")
                     inserted += 1
 
+            if skipped_empty_id or errored:
+                raise RuntimeError(
+                    f"batch rejected: {skipped_empty_id} empty IDs, {errored} row errors"
+                )
+
     logger.info(
         "insert_listings done: %d total, %d inserted, %d skipped (empty id), %d errored (ciudad=%r)",
         len(rows), inserted, skipped_empty_id, errored, ciudad,
     )
+    return inserted
 
 
 def test_connection() -> bool:

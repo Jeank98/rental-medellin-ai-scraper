@@ -23,7 +23,7 @@ class TestRegistry(unittest.TestCase):
     def test_lapalma_registration(self):
         self.assertEqual(
             PORTALS["lapalmainmobiliaria"],
-            {"module": "lapalma", "min_listings": 50, "script": "lapalma"},
+            {"module": "lapalma", "script": "lapalma"},
         )
 
     def test_cli_default_uses_contract_portal_name(self):

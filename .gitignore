@@ -1,6 +1,7 @@
 *.csv
 *.xlsx
 results/
+runtime/scraper-runs/
 **/scraped-data/*.json
 data/
 .env

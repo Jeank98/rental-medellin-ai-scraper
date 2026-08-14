@@ -135,6 +135,7 @@ def _generate_summary_section(
     backup_path: str | None,
     scrape_results: list[dict],
     total_time: float,
+    sheet_result: dict | None = None,
 ) -> list[str]:
     lines: list[str] = []
     lines.append(_sep_border())
@@ -148,6 +149,12 @@ def _generate_summary_section(
     db_line = f"DB UPDATE: {total_listings:,} listings across {total_portals} portals"
     lines.append(_content_line(db_line))
 
+    if sheet_result is not None:
+        sheet_status = "SKIPPED" if sheet_result.get("skipped") else (
+            "UPDATED" if sheet_result.get("success") else "FAILED"
+        )
+        lines.append(_content_line(f"SHEETS: {sheet_status}"))
+
     time_line = f"TOTAL TIME: {_format_time(total_time)}"
     lines.append(_content_line(time_line))
     return lines
@@ -159,6 +166,7 @@ def generate_report(
     validation: dict,
     backup_path: str | None,
     total_time: float,
+    sheet_result: dict | None = None,
 ) -> str:
     """Generate a box-drawn console report for the orchestrator.
 
@@ -189,7 +197,7 @@ def generate_report(
     lines.extend(_generate_validation_section(validation))
 
     # Summary (backup, db update, total time)
-    lines.extend(_generate_summary_section(backup_path, scrape_results, total_time))
+    lines.extend(_generate_summary_section(backup_path, scrape_results, total_time, sheet_result))
 
     # Footer
     lines.append(_bot_border())

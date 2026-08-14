@@ -11,26 +11,32 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from scrape.report import generate_report
+from scrape.process_runner import run_with_retries
+from scrape.run_report import write_json_report
+
+RETRY_ATTEMPTS = 2
+RETRY_DELAY_SECONDS = 5.0
+SHEET_TIMEOUT_SECONDS = 900
 
 PORTALS = {
-    "accrecer": {"module": "accrecer", "min_listings": 12},
-    "totalbienes": {"module": "totalbienes", "min_listings": 10},
-    "maxibienes": {"module": "maxibienes", "min_listings": 30},
-    "albertoalvarez": {"module": "albertoalvarez", "min_listings": 50},
-    "alnago": {"module": "alnago", "min_listings": 5},
-    "arrendamientosdelnorte": {"module": "arrendamientosdelnorte", "min_listings": 100, "script": "adn"},
-    "arrendamientoselcastillo": {"module": "arrendamientoselcastillo", "min_listings": 225},
-    "arrendamientosmonserrate": {"module": "arrendamientosmonserrate", "min_listings": 20, "script": "monserrate"},
-    "arrendamientossantafe": {"module": "arrendamientossantafe", "min_listings": 30, "script": "asf"},
-    "arrendamientosvillacruz": {"module": "arrendamientosvillacruz", "min_listings": 30, "script": "villacruz"},
-    "coninsa": {"module": "coninsa", "min_listings": 150},
-    "habitamos": {"module": "habitamos", "min_listings": 100},
-    "merinohermanos": {"module": "merinohermanos", "min_listings": 70},
-    "metrocasas": {"module": "metrocasas", "min_listings": 5},
-    "proserinmobiliaria": {"module": "proserinmobiliaria", "min_listings": 30},
-    "santillana": {"module": "santillana", "min_listings": 30},
-    "lapalmainmobiliaria": {"module": "lapalma", "min_listings": 50, "script": "lapalma"},
-    "zitios": {"module": "zitios", "min_listings": 50},
+    "accrecer": {"module": "accrecer"},
+    "totalbienes": {"module": "totalbienes"},
+    "maxibienes": {"module": "maxibienes"},
+    "albertoalvarez": {"module": "albertoalvarez"},
+    "alnago": {"module": "alnago"},
+    "arrendamientosdelnorte": {"module": "arrendamientosdelnorte", "script": "adn"},
+    "arrendamientoselcastillo": {"module": "arrendamientoselcastillo"},
+    "arrendamientosmonserrate": {"module": "arrendamientosmonserrate", "script": "monserrate"},
+    "arrendamientossantafe": {"module": "arrendamientossantafe", "script": "asf"},
+    "arrendamientosvillacruz": {"module": "arrendamientosvillacruz", "script": "villacruz"},
+    "coninsa": {"module": "coninsa"},
+    "habitamos": {"module": "habitamos"},
+    "merinohermanos": {"module": "merinohermanos"},
+    "metrocasas": {"module": "metrocasas"},
+    "proserinmobiliaria": {"module": "proserinmobiliaria"},
+    "santillana": {"module": "santillana"},
+    "lapalmainmobiliaria": {"module": "lapalma", "script": "lapalma"},
+    "zitios": {"module": "zitios"},
 }
 
 
@@ -80,38 +86,26 @@ def health_check(portals: dict, timeout: int = 300, verbose: bool = True) -> lis
         script = _script_name(portal)
         if verbose:
             print(f"  ⏳ {portal:30s} checking...", end="", flush=True)
-        start = time.monotonic()
-        try:
-            proc = subprocess.run(
-                ["uv", "run", "python", f"scripts/scrape_{script}.py", "--sample-only", "--output", "csv"],
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-            elapsed = time.monotonic() - start
-            listings = _parse_listing_count(proc.stdout)
-            if proc.returncode != 0:
-                error_msg = proc.stderr[:200].strip() if proc.stderr else f"exit code {proc.returncode}"
-                if verbose:
-                    print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s) — {error_msg[:60]}")
-                return {"portal": portal, "healthy": False, "listings": listings, "elapsed": elapsed, "error": error_msg}
-            if listings == 0:
-                if verbose:
-                    print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s) — 0 listings")
-                return {"portal": portal, "healthy": False, "listings": 0, "elapsed": elapsed, "error": "0 listings returned"}
+        result = run_with_retries(
+            ["uv", "run", "python", f"scripts/scrape_{script}.py", "--sample-only", "--output", "csv"],
+            timeout=timeout,
+            max_attempts=RETRY_ATTEMPTS,
+            retry_delay=RETRY_DELAY_SECONDS,
+        )
+        elapsed = result.elapsed
+        listings = _parse_listing_count(result.stdout)
+        if result.returncode != 0:
+            error_msg = result.error or f"exit code {result.returncode}"
             if verbose:
-                print(f"\r  ✅ {portal:30s} {listings:>4d} listings ({elapsed:.1f}s)")
-            return {"portal": portal, "healthy": True, "listings": listings, "elapsed": elapsed, "error": None}
-        except subprocess.TimeoutExpired:
-            elapsed = time.monotonic() - start
+                print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s, {result.attempts} attempts) — {error_msg[:60]}")
+            return {"portal": portal, "healthy": False, "listings": listings, "elapsed": elapsed, "attempts": result.attempts, "error": error_msg}
+        if listings == 0:
             if verbose:
-                print(f"\r  ❌ {portal:30s} TIMEOUT ({elapsed:.1f}s)")
-            return {"portal": portal, "healthy": False, "listings": 0, "elapsed": elapsed, "error": "timeout"}
-        except Exception as e:
-            elapsed = time.monotonic() - start
-            if verbose:
-                print(f"\r  ❌ {portal:30s} ERROR ({elapsed:.1f}s)")
-            return {"portal": portal, "healthy": False, "listings": 0, "elapsed": elapsed, "error": str(e)[:200]}
+                print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s) — 0 listings")
+            return {"portal": portal, "healthy": False, "listings": 0, "elapsed": elapsed, "attempts": result.attempts, "error": "0 listings returned"}
+        if verbose:
+            print(f"\r  ✅ {portal:30s} {listings:>4d} listings ({elapsed:.1f}s)")
+        return {"portal": portal, "healthy": True, "listings": listings, "elapsed": elapsed, "attempts": result.attempts, "error": None}
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(portal_keys)) as executor:
         futures = {executor.submit(_check, p): p for p in portal_keys}
@@ -142,34 +136,22 @@ def parallel_scrape(portal_keys: list[str], workers: int = 4, ciudad: str = "med
         script = _script_name(portal)
         if verbose:
             print(f"  ⏳ {portal:30s} scraping...", end="", flush=True)
-        start = time.monotonic()
-        try:
-            proc = subprocess.run(
-                ["uv", "run", "python", f"scripts/scrape_{script}.py", "--output", "db", "--ciudad", ciudad],
-                capture_output=True,
-                text=True,
-                timeout=3600,
-            )
-            elapsed = time.monotonic() - start
-            listings = _parse_listing_count(proc.stdout)
-            if proc.returncode != 0:
-                error_msg = proc.stderr[:200].strip() if proc.stderr else f"exit code {proc.returncode}"
-                if verbose:
-                    print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s) — {error_msg[:60]}")
-                return {"portal": portal, "success": False, "listings": listings, "elapsed": elapsed, "error": error_msg}
+        result = run_with_retries(
+            ["uv", "run", "python", f"scripts/scrape_{script}.py", "--output", "db", "--ciudad", ciudad],
+            timeout=3600,
+            max_attempts=RETRY_ATTEMPTS,
+            retry_delay=RETRY_DELAY_SECONDS,
+        )
+        elapsed = result.elapsed
+        listings = _parse_listing_count(result.stdout)
+        if result.returncode != 0:
+            error_msg = result.error or f"exit code {result.returncode}"
             if verbose:
-                print(f"\r  ✅ {portal:30s} {listings:>5d} listings ({_fmt_time(elapsed)})")
-            return {"portal": portal, "success": True, "listings": listings, "elapsed": elapsed, "error": None}
-        except subprocess.TimeoutExpired:
-            elapsed = time.monotonic() - start
-            if verbose:
-                print(f"\r  ❌ {portal:30s} TIMEOUT ({elapsed:.1f}s)")
-            return {"portal": portal, "success": False, "listings": 0, "elapsed": elapsed, "error": "timeout"}
-        except Exception as e:
-            elapsed = time.monotonic() - start
-            if verbose:
-                print(f"\r  ❌ {portal:30s} ERROR ({elapsed:.1f}s)")
-            return {"portal": portal, "success": False, "listings": 0, "elapsed": elapsed, "error": str(e)[:200]}
+                print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s, {result.attempts} attempts) — {error_msg[:60]}")
+            return {"portal": portal, "success": False, "listings": listings, "elapsed": elapsed, "attempts": result.attempts, "error": error_msg}
+        if verbose:
+            print(f"\r  ✅ {portal:30s} {listings:>5d} listings ({_fmt_time(elapsed)})")
+        return {"portal": portal, "success": True, "listings": listings, "elapsed": elapsed, "attempts": result.attempts, "error": None}
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(_scrape, p): p for p in portal_keys}
@@ -182,24 +164,31 @@ def parallel_scrape(portal_keys: list[str], workers: int = 4, ciudad: str = "med
     return results
 
 
-def validate_results(scrape_results: list[dict], portals: dict) -> dict:
-    """Validate scrape results against minimum listing thresholds.
+def validate_results(
+    scrape_results: list[dict],
+    portals: dict | None = None,
+    health_results: list[dict] | None = None,
+) -> dict:
+    """Validate technical execution results without judging inventory size.
 
     Returns {passed: bool, warnings: [str]}.
     """
     warnings: list[str] = []
 
+    for result in health_results or []:
+        if not result.get("healthy", False):
+            warnings.append(
+                f"{result.get('portal', '?')}: HEALTH CHECK FAILED — "
+                f"{result.get('error') or 'unknown error'}"
+            )
+
     for r in scrape_results:
         portal = r.get("portal", "?")
-        listings = r.get("listings", 0)
-        min_listings = portals.get(portal, {}).get("min_listings", 0)
         error = r.get("error")
         success = r.get("success", False)
 
         if not success:
             warnings.append(f"{portal}: FAILED — {error or 'unknown error'}")
-        elif listings < min_listings:
-            warnings.append(f"{portal}: {listings} listings (min {min_listings})")
 
     passed = len(warnings) == 0
     return {"passed": passed, "warnings": warnings}
@@ -265,11 +254,30 @@ def backup_db(backup_dir: str = "~/Projects/Backups", verbose: bool = True) -> s
         return None
 
 
+def export_to_sheets(ciudad: str = "medellin", verbose: bool = True) -> dict:
+    """Mirror the current DB state to Sheets after portal writes complete."""
+    result = run_with_retries(
+        ["uv", "run", "python", "scripts/export_to_sheets.py", "--city", ciudad],
+        timeout=SHEET_TIMEOUT_SECONDS,
+        max_attempts=1,
+    )
+    if verbose and result.returncode != 0:
+        print(f"  ❌ Sheet export FAILED — {result.error or 'unknown error'}")
+    return {
+        "success": result.returncode == 0,
+        "attempts": result.attempts,
+        "elapsed": result.elapsed,
+        "error": result.error,
+    }
+
+
 def run_pipeline(
     workers: int = 4,
     ciudad: str = "medellin",
     skip_backup: bool = False,
     skip_health: bool = False,
+    skip_sheet: bool = False,
+    report_dir: str = "runtime/scraper-runs",
 ) -> int:
     """Run the full 5-phase pipeline: health → backup → scrape → validate → report.
 
@@ -309,7 +317,17 @@ def run_pipeline(
         print("\n  ⚠️  No healthy portals to scrape\n")
 
     # Phase 4: Validation
-    validation = validate_results(scrape_results, PORTALS)
+    validation = validate_results(scrape_results, PORTALS, health_results)
+    sheet_result = (
+        {"success": True, "skipped": True, "attempts": 0, "elapsed": 0.0, "error": None}
+        if skip_sheet
+        else export_to_sheets(ciudad)
+    )
+    if not sheet_result["success"]:
+        validation["warnings"].append(
+            f"sheets: EXPORT FAILED — {sheet_result.get('error') or 'unknown error'}"
+        )
+        validation["passed"] = False
     if validation["warnings"]:
         print(f"\n  ⚠️  Validation warnings:")
         for w in validation["warnings"]:
@@ -319,7 +337,31 @@ def run_pipeline(
 
     # Phase 5: Report
     total_time = time.monotonic() - start
-    report = generate_report(health_results, scrape_results, validation, backup_path, total_time)
+    report = generate_report(
+        health_results,
+        scrape_results,
+        validation,
+        backup_path,
+        total_time,
+        sheet_result,
+    )
     print(report)
+
+    try:
+        report_path = write_json_report(
+            report_dir,
+            {
+                "health": health_results,
+                "scrape": scrape_results,
+                "validation": validation,
+                "backup_path": backup_path,
+                "sheet": sheet_result,
+                "total_time": total_time,
+            },
+        )
+        print(f"Execution report: {report_path}")
+    except OSError as error:
+        print(f"Execution report FAILED: {error}")
+        validation["passed"] = False
 
     return 0 if validation.get("passed", False) else 1

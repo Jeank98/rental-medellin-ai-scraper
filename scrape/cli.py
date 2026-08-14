@@ -119,7 +119,14 @@ def run_scraper(scraper_fn, portal: str = None, args: argparse.Namespace = None)
         write_to_csv(rows, portal, args.ciudad)
 
     if args.output in ('db', 'both'):
-        write_to_db(rows, portal, args.ciudad)
+        inserted = write_to_db(rows, portal, args.ciudad)
+        if isinstance(inserted, int) and inserted != len(rows):
+            print(
+                f"Error: DB write inserted {inserted}/{len(rows)} listings for {portal}; "
+                "the previous snapshot was preserved.",
+                file=sys.stderr,
+            )
+            return 1
 
     print(f"Scraped {len(rows)} listings from {portal}")
 
