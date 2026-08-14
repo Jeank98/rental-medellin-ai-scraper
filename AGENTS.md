@@ -94,7 +94,11 @@ Options:
 - `--ciudad` — city filter (default `medellin`)
 - `--skip-backup` — skip pg_dump before scraping
 - `--skip-health` — skip health check (run all scrapers regardless)
+- `--skip-sheet` — skip the post-DB Google Sheets export
+- `--report-dir` — directory for timestamped JSON execution reports (default `runtime/scraper-runs`)
 - `--verbose` — detailed logging
+
+The orchestrator retries technical health-check and full-scrape failures once. It does not reject successful runs based on listing counts. Each portal DB replacement is atomic; a failed write returns a non-zero status and preserves the previous portal snapshot. Sheets export runs after the DB phase unless explicitly skipped.
 
 ### Running a single portal
 

@@ -14,6 +14,12 @@ def main():
     parser.add_argument("--ciudad", default="medellin", help="City filter")
     parser.add_argument("--skip-backup", action="store_true", help="Skip DB backup phase")
     parser.add_argument("--skip-health", action="store_true", help="Skip health check (run all scrapers)")
+    parser.add_argument("--skip-sheet", action="store_true", help="Skip post-DB Google Sheets export")
+    parser.add_argument(
+        "--report-dir",
+        default="runtime/scraper-runs",
+        help="Directory for timestamped JSON execution reports",
+    )
     parser.add_argument("--verbose", action="store_true", help="Detailed logging")
 
     args = parser.parse_args()
@@ -27,6 +33,8 @@ def main():
         ciudad=args.ciudad,
         skip_backup=args.skip_backup,
         skip_health=args.skip_health,
+        skip_sheet=args.skip_sheet,
+        report_dir=args.report_dir,
     )
     sys.exit(exit_code)
 

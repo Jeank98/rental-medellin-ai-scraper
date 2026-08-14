@@ -9,7 +9,7 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from db import create_tables, deactivate_listings, insert_listings
+from db import create_tables, insert_listings
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 def write_to_db(rows: list[dict], portal: str, ciudad: str = "medellin") -> int:
     """Insert listings into the database.
 
-    Calls create_tables → deactivate_listings → insert_listings in order.
+    Calls create_tables and performs the portal replacement in one transaction.
 
     Args:
         rows: List of listing dicts matching the 11-column spec.
@@ -32,10 +32,9 @@ def write_to_db(rows: list[dict], portal: str, ciudad: str = "medellin") -> int:
 
     try:
         create_tables()
-        deactivate_listings(portal, ciudad)
-        insert_listings(rows, ciudad=ciudad)
-        logger.info("Deactivated old %s listings, inserted %d new ones", portal, len(rows))
-        return len(rows)
+        inserted = insert_listings(rows, ciudad=ciudad)
+        logger.info("Replaced old %s listings, inserted %d new ones", portal, inserted)
+        return inserted
     except Exception as e:
         logger.error("DB write failed for %s: %s", portal, e)
         return 0
