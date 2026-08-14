@@ -155,13 +155,47 @@ Some portals do not expose certain fields at all. A `0` for these fields is corr
 
 | Portal | Genuinely absent fields (always 0) |
 |---|---|
-| ADN (REST API) | `banos`, `parqueaderos`, `estrato` |
+| ADN (REST API) | `banos`, `parqueaderos`, `estrato` ⚠️ see follow-up below |
 | Habitamos | `area`, `estrato` |
 | Monserrate | `area` (detail page only) |
 | Coninsa (GraphQL) | `area` (not in the API response) |
 | Acrecer | `banos`, `parqueaderos` (source-absent only) |
 
 Do NOT flag these as anomalies. The validator in `scrape/validator.py` accounts for per-portal genuine zeros.
+
+### Known follow-ups / future improvements
+
+**⚠️ ADN: 0s are NOT genuinely absent — they're an artifact of the 1-phase strategy** (added 2026-06-01)
+
+The ADN bulk API (`/wp-json/anorte/v1/buscador`) and per-property API (`/wp-json/anorte/v1/inmueble?codigo=N`) both omit `banos`, `parqueaderos`, and `estrato`. The current scraper is 1-phase (bulk API only) → 182/182 ADN rows have these fields as 0. This is misleading — the data IS available on the rendered property page (`/propiedades/arriendo/{tipo}/{barrio}/{municipio}/{id}/`):
+
+```text
+Detalles del inmueble
+  Municipio: Bello
+  Estrato: 4
+  Alcobas: 3
+  Baños: 2
+  Parqueadero Carro: Si
+  Parqueadero Moto: No
+  ...
+```
+
+To fill these fields, convert ADN to a **2-phase strategy** (like SantaFe, Santillana, Alnago, Monserrate):
+- Phase 1 (existing): bulk API → 137 listings
+- Phase 2 (new): `stealthy_fetch_page()` each 5-segment URL → parse the "Detalles" section for `Baños:`, `Estrato:`, `Parqueadero Carro/Moto:`
+- ~137 detail fetches in parallel (workers=20-24) → ~30-60s added per scrape
+
+**Infrastructure is already in place**:
+- `scrape/fetcher.py::stealthy_fetch_page()` — JS-rendered fetch (used by Metrocasas)
+- `scrape/fetcher.py::bulk_fetch()` — concurrent URL fetch helper
+- Field patterns are clean `Field: Value` lines, easy to parse
+
+**Why we haven't done it yet** (user decision 2026-06-01): punt to later. Cost-benefit: 2-phase adds ~30-60s per scrape but fills 3 fields × 137 rows. Reasonable enhancement for any future "improve data quality" pass.
+
+When implementing, also update:
+- `reference/portals/arrendamientosdelnorte.md` — remove 0s from the "Zero Genuineness" table
+- `scrape/validator.py` — remove ADN from the per-portal genuine-zeros whitelist
+- `scrape/arrendamientosdelnorte.py` — add Phase 2 loop
 
 ### Tool requirements
 - Scrapling MCP must be configured in opencode.json (Docker: `pyd4vinci/scrapling`) — see `config/scrapling-mcp-setup.md`
