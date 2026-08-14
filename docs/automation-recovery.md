@@ -29,13 +29,3 @@ Do not edit source code, force a database write, or rerun a failed portal outsid
 ```
 
 The report directory is ignored by Git so the phone can retain operational history without creating repository changes. A future maintenance session can inspect the reports, fix a portal in a branch, run tests, and merge the fix through the normal pull request flow.
-
-## Termux Supervisor
-
-Android does not provide a system service manager inside the Ubuntu proot, so Hermes' service installer cannot install the gateway there. The phone uses one persisted Termux job, running every 15 minutes, to start the gateway when it is not running and to check battery status. This is separate from Hermes cron; Hermes still has exactly one scraper cron.
-
-The supervisor sends one notification below 25% battery and rearms after the battery reaches 30%:
-
-```text
-termux-job-scheduler --job-id 170214 --script /path/to/termux_supervisor.sh --period-ms 900000 --persisted true --battery-not-low false
-```
