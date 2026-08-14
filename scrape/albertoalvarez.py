@@ -1,11 +1,12 @@
-"""AlbertoAlvarez (AAL) — HTML/JSON textarea scraper.
+"""AlbertoAlvarez (AAL) — visible-text HTML card scraper.
 
-Each article card contains a <textarea class="field-property"> with
-complete structured JSON data. No CSS selectors or icon detection needed.
+Current result cards expose the contract fields as visible text. The legacy
+textarea parser remains for older HTML responses.
 """
 
 import json
 import logging
+from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
@@ -22,6 +23,70 @@ _PER_PAGE = 9
 _TIPO_OVERRIDE = {
     "casa vivienda": "casa",
 }
+
+
+def _modern_card_for_link(link):
+    """Find one modern result card containing a detail link."""
+    for parent in link.parents:
+        if getattr(parent, "name", "") != "div":
+            continue
+        detail_links = [
+            candidate
+            for candidate in parent.find_all("a", href=True)
+            if "/inmuebles/detalle/arrendamientos/" in str(candidate.get("href", ""))
+        ]
+        if len(detail_links) == 1 and "Cod:" in parent.get_text(" ", strip=True):
+            return parent
+    return None
+
+
+def _number_before_label(values: list[str], labels: tuple[str, ...]) -> int:
+    """Read a numeric value immediately preceding a metric label."""
+    for index, value in enumerate(values):
+        if value.casefold() not in labels or index == 0:
+            continue
+        previous = values[index - 1].replace(".", "").replace(",", "")
+        if previous.isdecimal():
+            return int(previous)
+    return 0
+
+
+def _modern_card(article, tipo_url: str) -> dict | None:
+    """Extract a listing from the current visible-text card structure."""
+    link = article.find("a", href=True)
+    if not link:
+        return None
+    href = str(link.get("href", ""))
+    url = urljoin(_BASE, href)
+    path_parts = urlparse(url).path.rstrip("/").split("/")
+    code = path_parts[-2] if len(path_parts) >= 2 else ""
+    if not code.startswith("AA-"):
+        return None
+
+    values = [value.strip() for value in article.stripped_strings if value.strip()]
+    price = next((value for value in values if "$" in value), "")
+    location = next(
+        (
+            value
+            for value in values
+            if "," in value and value.casefold().endswith(("medellín", "medellin"))
+        ),
+        "",
+    )
+    barrio = normalize_barrio(location.split(",", 1)[0]) if location else ""
+    return {
+        "id": f"AAL-{code}",
+        "portal": "albertoalvarez",
+        "tipo": normalize_tipo(tipo_url),
+        "precio": normalize_price(price),
+        "area": _number_before_label(values, ("metros",)),
+        "habitaciones": _number_before_label(values, ("alcobas",)),
+        "banos": _number_before_label(values, ("baños", "banos")),
+        "parqueaderos": 0,
+        "estrato": 0,
+        "barrio": barrio,
+        "url": url,
+    }
 
 
 def _extract_card(article, tipo_url: str) -> dict | None:
@@ -74,11 +139,29 @@ def _extract_card(article, tipo_url: str) -> dict | None:
     return listing
 
 
+def parse_search_page(html: str, tipo_url: str) -> list[dict]:
+    """Parse current Alberto Alvarez result cards from one search page."""
+    soup = BeautifulSoup(html or "", "html.parser")
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for link in soup.find_all("a", href=True):
+        if "/inmuebles/detalle/arrendamientos/" not in str(link.get("href", "")):
+            continue
+        card = _modern_card_for_link(link)
+        if card is None:
+            continue
+        row = _modern_card(card, tipo_url)
+        if row is not None and row["id"] not in seen:
+            rows.append(row)
+            seen.add(row["id"])
+    return rows
+
+
 def scrape(ciudad="medellin", sample_only=False, max_pages=None, verbose=False) -> list[dict]:
     """Scrape AlbertoAlvarez rental listings.
 
     Iterates over 3 tipos (apartamento, casa, apartaestudio), paginating
-    until no article cards are found or max_pages/sample_only limits hit.
+    until no cards or no new modern IDs are found or a limit is reached.
 
     Args:
         ciudad: City URL segment (default: medellin).
@@ -90,6 +173,7 @@ def scrape(ciudad="medellin", sample_only=False, max_pages=None, verbose=False) 
         List of standardized 11-column listing dicts.
     """
     all_listings: list[dict] = []
+    modern_seen: set[str] = set()
 
     for tipo in _TIPOS:
         page = 1
@@ -111,7 +195,19 @@ def scrape(ciudad="medellin", sample_only=False, max_pages=None, verbose=False) 
             soup = BeautifulSoup(html, "html.parser")
             articles = soup.find_all("article")
             if not articles:
-                break
+                page_rows = parse_search_page(html, tipo)
+                new_rows = [row for row in page_rows if row["id"] not in modern_seen]
+                all_listings.extend(new_rows)
+                modern_seen.update(row["id"] for row in new_rows)
+                if not new_rows:
+                    break
+                pages_fetched += 1
+                if max_pages is not None and pages_fetched >= max_pages:
+                    break
+                if sample_only and pages_fetched >= 3:
+                    break
+                page += 1
+                continue
 
             cards_found = 0
             for article in articles:
