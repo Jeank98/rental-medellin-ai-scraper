@@ -1,6 +1,6 @@
 # AGENTS.md — Rental Medellín AI Scraper
 
-This project is a **knowledge base + tooling** for scraping real estate rental listings from Colombian portals. It provides 18 per-portal executable Python scripts (powered by a shared `scrape/` package), plus AI-agent reference documentation for portal discovery and field mapping.
+This project is a **knowledge base + tooling** for scraping real estate rental listings from Colombian portals. It provides 21 per-portal executable Python scripts (powered by a shared `scrape/` package), plus AI-agent reference documentation for portal discovery and field mapping.
 
 ## What every agent working with this project must know
 
@@ -8,21 +8,21 @@ This project is a **knowledge base + tooling** for scraping real estate rental l
 Scrape rental property listings from any Colombian real estate portal, extract standardized fields, and output listings as a typed CSV or to a PostgreSQL database. **Scripts are the PRIMARY production path** — the agentic workflow exists as a fallback and for documenting new portal structures.
 
 ### Production: scripts first, agents second
-All 18 portals have standalone executable scripts at `scripts/scrape_{portal}.py`. These call into a shared `scrape/{portal}.py` module and use `scrape/cli.py` for standardized CLI behavior (`--output csv|db|both`, `--ciudad`, `--sample-only`, `--max-pages`, `--verbose`).
+All 21 portals have standalone executable scripts at `scripts/scrape_{portal}.py`. These call into a shared `scrape/{portal}.py` module and use `scrape/cli.py` for standardized CLI behavior (`--output csv|db|both`, `--ciudad`, `--sample-only`, `--max-pages`, `--verbose`).
 
 **When a portal has a working script, ALWAYS use the script.** The agentic workflow (Scrapling MCP tools + agent reasoning) is reserved for:
 - Discovering a brand-new portal not yet in the codebase
 - Debugging a script that broke after a site redesign
 - Updating field mappings in `reference/portals/{name}.md`
 
-### Strategy types (18 portals)
+### Strategy types (21 portals)
 
 | Strategy | Count | Portals |
 |---|---|---|
-| REST API | 1 | ADN (Arrendamientos del Norte) |
+| REST API | 2 | ADN (Arrendamientos del Norte), Portada Inmobiliaria |
 | GraphQL | 1 | Coninsa |
 | Single-phase HTML | 7 | Maxibienes, AlbertoAlvarez, MerinoHermanos, Habitamos, Metrocasas, Acrecer, Total Bienes |
-| Two-phase HTML | 8 | SantaFe, Santillana, Alnago, Monserrate, El Castillo, La Palma, Proser Inmobiliaria, Zitios |
+| Two-phase HTML | 10 | SantaFe, Santillana, Alnago, Monserrate, El Castillo, La Palma, Proser Inmobiliaria, Zitios, Arango Tobón, Panorama Inmobiliario |
 | Load More (JS) | 1 | VillaCruz |
 
 **Per-portal ID formats** (each portal uses its own ID scheme):
@@ -46,17 +46,20 @@ All 18 portals have standalone executable scripts at `scripts/scrape_{portal}.py
 | Proser Inmobiliaria | PRO | PRO-{numeric} | PRO-10163884 |
 | Total Bienes | TB | TB-{numeric} | TB-11836 |
 | Zitios | ZIT | ZIT-{numeric} | ZIT-10188009 |
+| Arango Tobón | ATB | ATB-{numeric} | ATB-4571 |
+| Panorama Inmobiliario | PAN | PAN-{numeric} | PAN-8170174 |
+| Portada Inmobiliaria | POR | POR-{complete-code} | POR-679-78592 |
 
 ### Key files
 | File | Purpose |
 |---|---|
 | **Scripts (primary production path)** | |
-| `scripts/run_all.py` | Orchestrator: runs all 18 scrapers with health check → DB backup → parallel scrape → validation → report |
-| `scripts/scrape_{portal}.py` × 18 | Per-portal CLI entry points (thin wrappers calling `scrape/{portal}.py`) |
+| `scripts/run_all.py` | Orchestrator: runs all 21 scrapers with health check → DB backup → parallel scrape → validation → report |
+| `scripts/scrape_{portal}.py` × 21 | Per-portal CLI entry points (thin wrappers calling `scrape/{portal}.py`) |
 | `scrape/orchestrator.py` | Pipeline logic: health checks, parallel execution, backup, reporting |
 | `scrape/report.py` | Report formatting for the orchestrator |
 | `scrape/cli.py` | Shared CLI factory (`create_parser` / `run_scraper`) for all portal scripts |
-| `scrape/{portal}.py` × 18 | Per-portal scraper logic (extraction, pagination, normalization) |
+| `scrape/{portal}.py` × 21 | Per-portal scraper logic (extraction, pagination, normalization) |
 | `scrape/accrecer.py` | Acrecer scraper (single-phase RSC, no detail pages) |
 | `scripts/scrape_accrecer.py` | Acrecer CLI entry point |
 | `scrape/proserinmobiliaria.py` | Proser scraper (two-phase HTML, canonical Medellín rental query) |
@@ -66,6 +69,12 @@ All 18 portals have standalone executable scripts at `scripts/scrape_{portal}.py
 | `scrape/lapalma.py` | La Palma scraper (two-phase HTML) |
 | `scrape/zitios.py` | Zitios scraper (two-phase HTML) |
 | `scrape/totalbienes.py` | Total Bienes scraper (single-phase HTML, no detail pages) |
+| `scrape/arangotobon.py` | Arango Tobón scraper (two-phase HTML) |
+| `scripts/scrape_arangotobon.py` | Arango Tobón CLI entry point |
+| `scrape/panoramainmobiliario.py` | Panorama scraper (two-phase Wasi HTML, three filtered type streams → detail) |
+| `scripts/scrape_panoramainmobiliario.py` | Panorama CLI entry point |
+| `scrape/portadainmobiliaria.py` | Portada scraper (single-phase REST API, no detail pages) |
+| `scripts/scrape_portadainmobiliaria.py` | Portada CLI entry point |
 | `scrape/fetcher.py` | HTTP fetch utilities (requests, aiohttp, Scrapling, Playwright) |
 | `scrape/normalize.py` | Normalization functions (precio, tipo, estrato, garaje, barrio, URL) |
 | `scrape/validator.py` | Anomaly detection and validation |
@@ -86,11 +95,11 @@ All 18 portals have standalone executable scripts at `scripts/scrape_{portal}.py
 ### Running all portals at once
 
 ```
-uv run python scripts/run_all.py --workers 18
+uv run python scripts/run_all.py --workers 21
 ```
 
 Options:
-- `--workers N` — concurrent scrapers (default 4, max 18 for full parallel)
+- `--workers N` — concurrent scrapers (default 4, max 21 for full parallel)
 - `--ciudad` — city filter (default `medellin`)
 - `--skip-backup` — skip pg_dump before scraping
 - `--skip-health` — skip health check (run all scrapers regardless)

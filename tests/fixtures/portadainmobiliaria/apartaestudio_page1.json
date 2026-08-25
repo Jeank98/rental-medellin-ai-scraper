@@ -1,0 +1,22 @@
+{
+  "Inmuebles": [
+    {
+      "Codigo_Inmueble": "679-78575",
+      "Tipo_Inmueble": "Apartaestudio",
+      "Canon": "1,200,000",
+      "AreaConstruida": "60",
+      "Alcobas": "1",
+      "banios": "1",
+      "garaje": "0",
+      "Estrato": "3",
+      "Barrio": "Pajarito"
+    }
+  ],
+  "datosGrales": {
+    "inicio": 1,
+    "fin": 1,
+    "pagina_actual": "1",
+    "totalInmuebles": 1,
+    "totalPagina": "12"
+  }
+}

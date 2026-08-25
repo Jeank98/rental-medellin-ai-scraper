@@ -153,9 +153,8 @@ def scrape(
     if verbose:
         logger.info("AVC: fetching page with scroll automation...")
 
-    fetcher = StealthyFetcher()
     try:
-        resp = fetcher.fetch(
+        resp = StealthyFetcher.fetch(
             _URL,
             page_action=scroll_to_load_all,
             timeout=90000,

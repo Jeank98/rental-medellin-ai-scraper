@@ -24,3 +24,6 @@ Discovered field-to-column mappings for each scraped portal. Each portal has its
 | Proser Inmobiliaria | `PRO` | [proserinmobiliaria.md](portals/proserinmobiliaria.md) | Two-phase (detail pages) | ✅ Implemented |
 | Zitios Inmobiliaria | `ZIT` | [zitios.md](portals/zitios.md) | Two-phase (paginated cards → detail) | ✅ Implemented |
 | Total Bienes SAS | `TB` | [totalbienes.md](portals/totalbienes.md) | Single-phase (numbered HTML pagination) | ✅ Implemented |
+| Arango Tobón Inmobiliaria | `ATB` | [arangotobon.md](portals/arangotobon.md) | Two-phase (paginated HTML → detail) | ✅ Implemented |
+| Panorama Inmobiliario | `PAN` | [panoramainmobiliario.md](portals/panoramainmobiliario.md) | Two-phase (Wasi filtered cards → detail) | ✅ Implemented |
+| Portada Inmobiliaria | `POR` | [portadainmobiliaria.md](portals/portadainmobiliaria.md) | REST API | ✅ Implemented |

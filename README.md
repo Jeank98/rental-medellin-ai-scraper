@@ -5,8 +5,8 @@ AI-agent-driven knowledge base for scraping real estate rental listings from Col
 ## Quick Start
 
 ```bash
-# Run all 18 portals at once:
-uv run python scripts/run_all.py --workers 18
+# Run all 21 portals at once:
+uv run python scripts/run_all.py --workers 21
 
 # Run a single portal:
 uv run python scripts/scrape_maxibienes.py --output db
@@ -93,9 +93,12 @@ rental-medellin-ai-scraper/
 │   ├── lapalma.py                   # LPI scraper (two-phase detail pages)
 │   ├── proserinmobiliaria.py        # PRO scraper (two-phase)
 │   ├── zitios.py                    # ZIT scraper (two-phase paginated HTML)
-│   └── totalbienes.py               # TB scraper (single-phase numbered HTML)
+│   ├── totalbienes.py               # TB scraper (single-phase numbered HTML)
+│   ├── arangotobon.py               # ATB scraper (two-phase HTML)
+│   ├── panoramainmobiliario.py      # PAN scraper (two-phase Wasi HTML)
+│   └── portadainmobiliaria.py       # POR scraper (REST API)
 ├── scripts/                         # Thin CLI entry points
-│   ├── run_all.py                   # Orchestrator: runs all 18 portals in parallel
+│   ├── run_all.py                   # Orchestrator: runs all 21 portals in parallel
 │   ├── scrape_maxibienes.py
 │   ├── scrape_albertoalvarez.py
 │   ├── scrape_alnago.py
@@ -114,6 +117,9 @@ rental-medellin-ai-scraper/
 │   ├── scrape_proserinmobiliaria.py
 │   ├── scrape_zitios.py
 │   ├── scrape_totalbienes.py
+│   ├── scrape_arangotobon.py
+│   ├── scrape_panoramainmobiliario.py
+│   ├── scrape_portadainmobiliaria.py
 │   ├── setup_db.py                  # Create listings table
 │   ├── test_save.py                 # Test insert and read-back
 │   ├── insert_listings.py           # Bulk insert from JSON
@@ -132,7 +138,7 @@ rental-medellin-ai-scraper/
 │   └── scrapling-mcp-setup.md       # Scrapling MCP setup guide
 ├── reference/
 │   ├── portal-field-mappings.md      # Index of all portal mappings
-│   └── portals/                      # Individual portal files (18 portals)
+│   └── portals/                      # Individual portal files (21 portals)
 ```
 
 ## Output Columns
@@ -172,6 +178,9 @@ rental-medellin-ai-scraper/
 | 16 | Proser Inmobiliaria | `PRO` | Two-phase (detail pages) | `scrape_proserinmobiliaria.py` |
 | 17 | Zitios Inmobiliaria | `ZIT` | Two-phase (paginated cards → detail) | `scrape_zitios.py` |
 | 18 | Total Bienes SAS | `TB` | Single-phase (numbered HTML) | `scrape_totalbienes.py` |
+| 19 | Arango Tobón Inmobiliaria | `ATB` | Two-phase (paginated HTML → detail) | `scrape_arangotobon.py` |
+| 20 | Panorama Inmobiliario | `PAN` | Two-phase (Wasi filtered cards → detail) | `scrape_panoramainmobiliario.py` |
+| 21 | Portada Inmobiliaria | `POR` | REST API | `scrape_portadainmobiliaria.py` |
 
 ## Requirements
 

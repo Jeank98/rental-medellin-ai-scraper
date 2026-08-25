@@ -57,33 +57,47 @@ _TIPO_EN_TO_ES = {
 def _extract_homepage_cards(resp) -> list[dict]:
     """Extract listing cards from homepage using Scrapling's native API.
 
-    Each card is an <article> element containing:
+    The legacy markup used an <article> element containing:
         Zona / value / Finalidad / Arriendo / Precio / $X /
         Cod: / NNN.. / Bedrooms / N / Bathrooms / N / Garages / N /
         <a href="/en/inmueble/NNN..">Ver inmueble</a>
 
+    The current SSR markup uses the property link itself as the card and no
+    longer emits <article> elements. Both shapes are kept here because the
+    portal has changed its homepage markup before.
+
     Returns list of partial listing dicts (tipo, area, estrato = 0).
     """
     articles = resp.find_all("article")
+    current_cards = not articles
+    card_elements = articles or [
+        link
+        for link in resp.find_all("a")
+        if "/inmueble/" in link.attrib.get("href", "")
+    ]
     cards: list[dict] = []
 
-    for article in articles:
+    for article in card_elements:
         # Find inmueble link
-        links = [
-            l
-            for l in article.find_all("a")
-            if l.attrib.get("href", "").startswith("/")
-            and "inmueble" in l.attrib.get("href", "")
+        links = [article] if current_cards else [
+            link
+            for link in article.find_all("a")
+            if link.attrib.get("href", "").startswith("/")
+            and "inmueble" in link.attrib.get("href", "")
         ]
         if not links:
             continue
 
         href = links[0].attrib["href"]
-        code = href.rsplit("/", 1)[-1]
+        code = href.rsplit("/", 1)[-1].split("?", 1)[0]
 
         # Extract text-based fields from the article
         text = article.get_all_text()
-        fields = _parse_article_text(text)
+        fields = (
+            _parse_current_homepage_card_text(text)
+            if current_cards
+            else _parse_article_text(text)
+        )
 
         codigo = fields.get("codigo", code)
         if not codigo:
@@ -92,9 +106,9 @@ def _extract_homepage_cards(resp) -> list[dict]:
         listing = {
             "id": f"ALN-{codigo}",
             "portal": _PORTAL,
-            "tipo": "",  # from detail page
+            "tipo": fields.get("tipo", ""),
             "precio": normalize_price(fields.get("precio", "")),
-            "area": 0,  # from detail page
+            "area": int(fields.get("area", "0") or "0"),
             "habitaciones": int(fields.get("bedrooms", "0") or "0"),
             "banos": int(fields.get("bathrooms", "0") or "0"),
             "parqueaderos": int(fields.get("garages", "0") or "0"),
@@ -149,6 +163,55 @@ def _parse_article_text(text: str) -> dict[str, str]:
             fields["codigo"] = line[4:].strip()
         elif lower.startswith("cod ") and len(line) > 4 and "codigo" not in fields:
             fields["codigo"] = line[4:].strip()
+
+    return fields
+
+
+def _parse_current_homepage_card_text(text: str) -> dict[str, str]:
+    """Parse the current SSR card text emitted by Alnago.
+
+    Current cards contain a price, title, location, then bedroom, bathroom,
+    parking, and area values as separate lines. The property link supplies the
+    stable code, so the parser only maps the remaining displayed fields.
+    """
+    fields: dict[str, str] = {}
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+
+    for line in lines:
+        if line.startswith("$"):
+            fields["precio"] = line
+            break
+
+    title_index = -1
+    for index, line in enumerate(lines):
+        lower = line.lower()
+        if " en arriendo" in lower or " en venta" in lower:
+            title_index = index
+            marker = " en arriendo" if " en arriendo" in lower else " en venta"
+            fields["tipo"] = normalize_tipo(line[: lower.index(marker)].strip())
+            break
+
+    if title_index < 0:
+        return fields
+
+    if title_index + 1 < len(lines):
+        fields["zona"] = lines[title_index + 1].split(",", 1)[0].strip()
+
+    numeric_values = [
+        int(line)
+        for line in lines[title_index + 2 :]
+        if line.isdecimal()
+    ]
+    if len(numeric_values) >= 3:
+        fields["bedrooms"] = str(numeric_values[0])
+        fields["bathrooms"] = str(numeric_values[1])
+        fields["garages"] = str(numeric_values[2])
+
+    for line in lines[title_index + 2 :]:
+        lower = line.lower()
+        if "m²" in lower or "m2" in lower:
+            fields["area"] = str(_extract_m2(line))
+            break
 
     return fields
 
@@ -275,21 +338,51 @@ def _extract_detail_fields(html: str) -> dict:
             if val > 0:
                 result["area"] = val
 
-    # --- Garaje: line-based label "Garaje" / "Parqueadero" with value on next line ---
-    # Detail page format: "Garaje\nN" or "Parqueadero\nN" or "Parqueaderos\nN"
-    _GARAJE_LABEL_RE = _re.compile(r"^(garaje|parqueaderos?)$", _re.IGNORECASE)
+    # --- Garaje: structured label with value on next line ---
+    # Feature lists also contain a bare "Garaje" label, so only accept a
+    # following value that can actually be normalized as parking data.
+    _GARAJE_LABELS = {
+        "garaje",
+        "garajes",
+        "parqueadero",
+        "parqueaderos",
+        "garage",
+        "garages",
+    }
+    _GARAJE_VALUES = {
+        "si",
+        "sí",
+        "no",
+        "incluido",
+        "sin",
+        "sin garaje",
+        "doble",
+    }
     for i, line in enumerate(lines):
-        if _GARAJE_LABEL_RE.match(line.strip()) and i + 1 < len(lines):
-            result["parqueaderos"] = normalize_garaje(lines[i + 1])
+        if line.strip().lower() not in _GARAJE_LABELS or i + 1 >= len(lines):
+            continue
+        candidate = lines[i + 1].strip()
+        if candidate.isdecimal() or candidate.lower() in _GARAJE_VALUES:
+            result["parqueaderos"] = normalize_garaje(candidate)
             break
-    # Fallback: inline format "Garaje: 2" or "Garaje 2" on same line
+
+    # Fallback: inline format "Garaje: 2" or "Garaje 2" on same line.
     if result["parqueaderos"] is None:
-        _garaje_inline_re = _re.compile(
-            r"garaje[:\s]+(\d+|sí|si|incluido|no)", _re.IGNORECASE
-        )
-        match = _garaje_inline_re.search(text)
-        if match:
-            result["parqueaderos"] = normalize_garaje(match.group(1))
+        for line in lines:
+            lower = line.strip().lower()
+            for label in sorted(_GARAJE_LABELS, key=len, reverse=True):
+                for separator in (":", " "):
+                    prefix = f"{label}{separator}"
+                    if not lower.startswith(prefix):
+                        continue
+                    candidate = line.strip()[len(prefix) :].strip()
+                    if candidate.isdecimal() or candidate.lower() in _GARAJE_VALUES:
+                        result["parqueaderos"] = normalize_garaje(candidate)
+                        break
+                if result["parqueaderos"] is not None:
+                    break
+            if result["parqueaderos"] is not None:
+                break
 
     # --- Estrato: in description prose, pattern "estrato N" ---
     # Extract only the FIRST contiguous number after "estrato" word
@@ -332,8 +425,7 @@ def scrape(
     if verbose:
         logger.info("ALN: Phase A — fetching homepage")
 
-    fetcher = Fetcher()
-    resp = fetcher.get(_HOMEPAGE_URL)
+    resp = Fetcher.get(_HOMEPAGE_URL)
 
     if resp.status != 200:
         logger.error("ALN: Homepage returned %s", resp.status)

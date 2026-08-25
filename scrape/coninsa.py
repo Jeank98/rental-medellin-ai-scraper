@@ -62,7 +62,7 @@ def _fetch_graphql(query: str, variables: dict) -> dict | None:
     """POST a GraphQL query to the Coninsa Drupal endpoint."""
     import scrapling
 
-    fetcher = scrapling.Fetcher()
+    fetcher = scrapling.Fetcher
     try:
         resp = fetcher.post(
             _GRAPHQL_URL,

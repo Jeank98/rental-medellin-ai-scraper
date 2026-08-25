@@ -1,5 +1,5 @@
 """
-Orchestrator module — 5-phase pipeline for scraping all 18 Colombian real
+Orchestrator module — 5-phase pipeline for scraping all 21 Colombian real
 estate portals in parallel with health checks, validation, and DB backup.
 """
 
@@ -20,6 +20,7 @@ SHEET_TIMEOUT_SECONDS = 900
 
 PORTALS = {
     "accrecer": {"module": "accrecer"},
+    "arangotobon": {"module": "arangotobon"},
     "totalbienes": {"module": "totalbienes"},
     "maxibienes": {"module": "maxibienes"},
     "albertoalvarez": {"module": "albertoalvarez"},
@@ -33,6 +34,8 @@ PORTALS = {
     "habitamos": {"module": "habitamos"},
     "merinohermanos": {"module": "merinohermanos"},
     "metrocasas": {"module": "metrocasas"},
+    "panoramainmobiliario": {"module": "panoramainmobiliario"},
+    "portadainmobiliaria": {"module": "portadainmobiliaria"},
     "proserinmobiliaria": {"module": "proserinmobiliaria"},
     "santillana": {"module": "santillana"},
     "lapalmainmobiliaria": {"module": "lapalma", "script": "lapalma"},

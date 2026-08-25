@@ -1,0 +1,22 @@
+{
+  "Inmuebles": [
+    {
+      "Codigo_Inmueble": "679-78543",
+      "Tipo_Inmueble": "Casa",
+      "Canon": "12,800,000",
+      "AreaConstruida": "136.00",
+      "Alcobas": "3",
+      "banios": "4",
+      "garaje": "2",
+      "Estrato": "5",
+      "Barrio": "Los Balsos"
+    }
+  ],
+  "datosGrales": {
+    "inicio": 1,
+    "fin": 1,
+    "pagina_actual": "1",
+    "totalInmuebles": 1,
+    "totalPagina": "12"
+  }
+}

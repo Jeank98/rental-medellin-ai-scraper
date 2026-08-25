@@ -1,7 +1,7 @@
 """Fetcher wrappers — Scrapling Python API with retry logic.
 
 Provides fetch_page(), fetch_json(), and bulk_fetch() with exponential
-backoff retries for all 18 Colombian real estate portal scrapers.
+backoff retries for all 21 Colombian real estate portal scrapers.
 
 Uses scrapling.Fetcher for server-rendered pages and REST APIs,
 and scrapling.StealthyFetcher for browser-backed rendering or interaction
@@ -24,16 +24,16 @@ _TIMEOUT = 30  # seconds per request attempt
 _BULK_CHUNK_SIZE = 200
 _MAX_BULK_WORKERS = 20
 
-# Reusable fetcher instance — creating a new Fetcher() per call is expensive
-# (fingerprint setup, TLS handshake regeneration)
+# Scrapling's Fetcher methods are class methods in the current API. Keep the
+# class here so callers reuse its configured session without instantiation.
 _fetcher = None
 
 
 def _get_fetcher():
-    """Return a cached Scrapling Fetcher instance."""
+    """Return the cached Scrapling Fetcher class."""
     global _fetcher
     if _fetcher is None:
-        _fetcher = scrapling.Fetcher()
+        _fetcher = scrapling.Fetcher
     return _fetcher
 
 
@@ -214,7 +214,7 @@ def stealthy_fetch_with_action(
     Returns:
         Full HTML content after interactions, or None on failure.
     """
-    fetcher = scrapling.StealthyFetcher()
+    fetcher = scrapling.StealthyFetcher
 
     try:
         resp = fetcher.fetch(
@@ -245,7 +245,7 @@ def stealthy_fetch_page(url: str) -> Optional[str]:
         Fully-rendered page HTML as string, or None if all retries
         are exhausted.
     """
-    fetcher = scrapling.StealthyFetcher()
+    fetcher = scrapling.StealthyFetcher
 
     for attempt in range(_MAX_RETRIES + 1):
         try:

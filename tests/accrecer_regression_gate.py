@@ -20,10 +20,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import scrape.orchestrator
 
-EXPECTED_PORTALS_18 = [
+EXPECTED_PORTALS_21 = [
     "accrecer",
     "albertoalvarez",
     "alnago",
+    "arangotobon",
     "arrendamientosdelnorte",
     "arrendamientoselcastillo",
     "arrendamientosmonserrate",
@@ -35,6 +36,8 @@ EXPECTED_PORTALS_18 = [
     "maxibienes",
     "merinohermanos",
     "metrocasas",
+    "panoramainmobiliario",
+    "portadainmobiliaria",
     "proserinmobiliaria",
     "santillana",
     "totalbienes",

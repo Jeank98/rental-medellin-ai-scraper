@@ -1,0 +1,33 @@
+{
+  "Inmuebles": [
+    {
+      "Codigo_Inmueble": "679-78592",
+      "Tipo_Inmueble": "Apartamento",
+      "Canon": "1,950,000",
+      "AreaConstruida": "55.00",
+      "Alcobas": "3",
+      "banios": "2",
+      "garaje": "1",
+      "Estrato": "3",
+      "Barrio": "Robledo"
+    },
+    {
+      "Codigo_Inmueble": "679-78569",
+      "Tipo_Inmueble": "Apartamento",
+      "Canon": "2,300,000",
+      "AreaConstruida": "60",
+      "Alcobas": "3",
+      "banios": "1",
+      "garaje": "0",
+      "Estrato": "4",
+      "Barrio": "Robledo"
+    }
+  ],
+  "datosGrales": {
+    "inicio": 1,
+    "fin": 2,
+    "pagina_actual": "1",
+    "totalInmuebles": 2,
+    "totalPagina": "12"
+  }
+}

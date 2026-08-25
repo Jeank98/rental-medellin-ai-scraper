@@ -1,17 +1,18 @@
 # Alnago (`ALN`)
 
-- **URL**: `https://alnago.com` (homepage with SSR article cards)
-- **Type**: Next.js SSR — server-rendered article cards
-- **Strategy**: **Two-phase** — homepage articles → detail pages
-- **Key feature**: **Server-rendered `<article>` cards on homepage** — no Playwright or API needed
+- **URL**: `https://alnago.com` (homepage with SSR property links)
+- **Type**: Next.js SSR — server-rendered property cards
+- **Strategy**: **Two-phase** — homepage cards → detail pages
+- **Key feature**: **Server-rendered property links on homepage** — no Playwright or API needed
 
 ## Phase A — Homepage cards (via Scrapling)
 
-Use `Fetcher.get()` → `resp.find_all('article')` to get cards. Each `<article>` contains:
+Use `Fetcher.get()` to fetch the homepage. The current markup exposes each card as an
+`<a href="/en/inmueble/{code}">` element (the legacy markup used `<article>`). Each
+current link contains:
 ```
-Zona / {barrio} / Finalidad / Arriendo/Venta / Precio / $N /
-Cod: / {code} / Bedrooms / N / Bathrooms / N / Garages / N /
-<a href="/en/inmueble/{code}">Ver inmueble</a>
+Rent / $N/mo / Code {code} /
+{tipo} en arriendo en {zona} / {barrio}, {ciudad} / N / N / N / N m²
 ```
 
 | Column | Source | Pattern |
@@ -25,7 +26,7 @@ Cod: / {code} / Bedrooms / N / Bathrooms / N / Garages / N /
 | `banos` | `Bathrooms` line | `2` → int |
 | `parqueaderos` | `Garages` line | `0` → int |
 | `estrato` | **Phase B** — detail description prose | `"estrato 3"` → int (absent → 0) |
-| `barrio` | `Zona` line | `La Milagrosa` → normalize_barrio |
+| `barrio` | Location line before the city | `El Carmelo, Bello` → `El Carmelo` |
 | `url` | `https://alnago.com/es/inmueble/{code}` | Constructed |
 
 ## Phase B — Detail pages (server-rendered, `/es/inmueble/{code}`)
@@ -48,15 +49,15 @@ Fetch with `scrape/fetcher.py` `bulk_fetch()`. Extract from HTML text:
 
 ## Notes
 
-- **Site migrated from REST API to Next.js SSR (May 2026)**: Old `/api/v1/properties` removed. New site serves listing cards as `<article>` elements on homepage (24 "Featured Properties").
+- **Site migrated from REST API to Next.js SSR (May 2026)**: Old `/api/v1/properties` removed. The current homepage serves six featured property links; the scraper supports both the current link cards and the legacy `<article>` cards.
 - **Detail pages ARE server-rendered** — `scrapling_get` or `bulk_fetch` works without Playwright. URL: `https://alnago.com/es/inmueble/{code}`
 - **Homepage shows mixed Arriendo + Venta** — cards don't distinguish; detail page title confirms with "en arriendo" vs "en venta"
 - **Estrato NOT a structured field** — buried in description prose as `"estrato N"`. Many listings omit it → default 0.
 - **Tipo from title**: First word before "en arriendo/en venta" → normalize_tipo (handles Spanish: Apartamento, Casa, Apartaestudio + English from homepage)
 - **ID format**: `ALN-{code}` (simpler than old `ALN-{entry}-{id_property}` — codes are unique in new system)
-- **Homepage limits**: Only ~24-30 featured listings on homepage. For full scrape, "Load More" button needs Playwright or search page needs JS execution.
+- **Homepage limits**: Only six featured listings are currently server-rendered. For a full scrape, the "View all" search page needs JS execution.
 - **Search page** (`/es/categorias/arrendar/todos/medellin`): Client-rendered via JS — shows "Cargando..." without browser execution. NOT usable with `scrapling_get`.
-- **Scrapling API**: Uses `resp.find_all('article')` for card selection, `article.get_all_text()` for text extraction, `article.find_all('a')` for link extraction.
+- **Scrapling API**: Uses `resp.find_all('a')` with `/inmueble/` links for current card selection, `get_all_text()` for text extraction, and retains the legacy `<article>` fallback.
 
 ## Zero Genuineness
 
@@ -68,3 +69,5 @@ Fetch with `scrape/fetcher.py` `bulk_fetch()`. Extract from HTML text:
 
 - **Tipo extraction skips noise words ("en", "arriendo", "venta", …)**: Some detail titles start with "En arriendo, Casa en La Milagrosa" — the old first-word strategy returned `tipo='en'`. The extractor now walks the words of the trigger line and skips a noise set (`en, arriendo, venta, for, rent, in, sale, y, de, el, la, los, las, un, una, the, a, an, del`) until it finds the first real tipo word, then normalizes it.
 - **Garaje (parqueaderos) extracted from detail page**: Phase B now reads the `Garaje` / `Parqueadero` / `Parqueaderos` label on the detail page (line-based: label on one line, value on the next; inline fallback `Garaje: N`). The extractor returns `parqueaderos=None` when the label is absent so the orchestrator preserves the Phase A homepage value instead of overwriting it with `0`.
+- **Current homepage markup restored**: The homepage no longer emits `<article>` cards. Phase A now reads the property links and their displayed price, type, location, bedrooms, bathrooms, parking, and area values.
+- **Structured plural parking labels**: Detail pages use `Garajes` and also mention a bare `Garaje` in feature lists. Only a label followed by a numeric or recognized parking value is accepted, preventing feature text from overwriting the card value.
