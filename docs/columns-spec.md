@@ -1,6 +1,16 @@
 # Column Specification
 
-Every listing record (CSV row or database row) must have exactly these 11 columns in this order. All numeric fields are plain integers (no formatting, no symbols, no decimals). Missing fields are `0` for numeric, empty string for text.
+Every listing record has the canonical 11 listing fields below. The storage
+adapters add different operational fields:
+
+| Surface | Shape | Notes |
+|---|---|---|
+| CSV | 11 columns | Compact interchange output; no `ciudad`, `status`, or `scraped_at` columns. The city is encoded in the filename. |
+| PostgreSQL | 14 columns | The 11 fields plus `ciudad`, `status`, and `scraped_at`. `insert_listings(rows, ciudad=...)` receives city explicitly and deactivates only that portal/city snapshot. |
+| Google Sheets | 14 columns | Mirrors active PostgreSQL rows only, filtered by requested city, `precio >= 200000`, and allowed residential `tipo`. |
+
+All numeric fields are plain integers (no formatting, no symbols, no decimals).
+Missing fields are `0` for numeric, empty string for text.
 
 ## Column definitions
 

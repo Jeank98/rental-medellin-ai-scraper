@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Export real rental listings from PostgreSQL to a Google Sheets spreadsheet.
+"""Export active rental listings from PostgreSQL to a Google Sheets live mirror.
 
 Filters applied automatically:
+  - status == ``active`` (missing status is treated as active for legacy
+    in-memory rows; database rows always contain this column)
   - precio >= 200,000 COP (excludes placeholder/free listings)
   - tipo IN (apartamento, apto, casa, casa-finca, casa unifamiliar)
 
@@ -158,11 +160,20 @@ def build_drive_service():
 
 
 def fetch_listings(city=None, portal=None):
-    """Fetch listings from the database with optional filters.
+    """Fetch active listings with optional city and portal filters.
 
-    Always applies MIN_PRICE and ALLOWED_TIPOS filters.
+    The export is a live mirror, so inactive rows are never sent to Sheets.
+    Rows from older in-memory fixtures that omit ``status`` are treated as
+    active; PostgreSQL rows always have an explicit status value.
     """
     all_rows = get_all()
+
+    # Keep backward compatibility for fixture rows without a status field,
+    # while excluding every explicit non-active state from the live mirror.
+    all_rows = [
+        r for r in all_rows
+        if str(r.get("status", "active")).lower() == "active"
+    ]
 
     if city:
         city_lower = city.lower()

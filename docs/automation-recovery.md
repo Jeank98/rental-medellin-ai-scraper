@@ -13,6 +13,11 @@ The scraper uses deterministic safety rules first. External supervisors may insp
 7. Export the current PostgreSQL state to Google Sheets.
 8. Write a JSON report under `runtime/scraper-runs/`.
 
-Listing volume is not a failure criterion. A portal may legitimately publish 20 listings today and 2,000 tomorrow. Technical execution status, not inventory size, controls retries and writes.
+Listing volume is not a failure criterion for a successful full scrape: a portal
+may legitimately publish 20 listings today and 2,000 tomorrow. Health probes
+are intentionally stricter: a zero-result sample fails health because it cannot
+prove that extraction is working. Technical execution status, not inventory
+size, controls full-run retries and writes. A missing or malformed
+`SCRAPER_RESULT` marker is always a technical failure.
 
 The report directory is ignored by Git so operational history does not create repository changes. A maintenance session can inspect the reports, fix a portal in a branch, run tests, and merge the fix through the normal pull request flow.

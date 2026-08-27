@@ -149,7 +149,7 @@ def main():
                 )
                 inactive_before = cur.fetchone()[0]
 
-    insert_listings(rows)
+    insert_listings(rows, ciudad=ciudad)
     after = get_count()
 
     # Count currently inactive

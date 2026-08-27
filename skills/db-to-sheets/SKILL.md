@@ -10,20 +10,35 @@ metadata:
 
 ## What I Do
 
-Export real rental listings from the PostgreSQL database to a Google Sheets spreadsheet using the Google Sheets API. The agent runs a Python script that reads the database, authenticates via OAuth 2.0 desktop flow, and writes all rows with formatting.
+Export active rental listings from the PostgreSQL database to a Google Sheets
+live mirror using the Google Sheets API. The agent runs a Python script that
+reads the database, authenticates via OAuth 2.0 desktop flow, and writes the
+filtered rows with formatting.
 
 **Auto-filters applied:**
+- `status == active` — inactive/delisted history stays in PostgreSQL but is
+  never copied to the live mirror (legacy in-memory rows missing `status` are
+  treated as active)
+- requested city, case-insensitively
 - `precio >= 200.000 COP` — excludes placeholder/error listings
-- `tipo IN (apartamento, apto, casa, casa-finca, casa unifamiliar)` — excludes commercial, lots, offices, etc.
+- `tipo IN (apartamento, apto, casa, casa-finca, casa unifamiliar)` —
+  excludes commercial, lots, offices, and studios
 
-Exported columns: `id`, `portal`, `tipo`, `precio`, `area`, `habitaciones`, `banos`, `parqueaderos`, `estrato`, `barrio`, `url`, `ciudad`, `status`, `scraped_at`
+Exported columns are the 14-column DB shape: the canonical 11 listing fields
+plus `ciudad`, `status`, and `scraped_at`. CSV output remains a separate
+11-column format; see `docs/columns-spec.md`.
 
-> **Run after a full scrape**: the spreadsheet is fed from PostgreSQL, so export after a complete scrape (e.g. `scripts/run_all.py`), not from a capped `--sample-only` CSV.
+> **Run after a full scrape**: the spreadsheet is fed from PostgreSQL, so
+> export after a complete scrape (e.g. `scripts/run_all.py`), not from a capped
+> `--sample-only` CSV.
 
 The script can operate in two modes:
 
-- **In-place update**: If `GOOGLE_SHEET_ID` is set in `.env`, the target sheet is cleared and repopulated with fresh DB data on each run — the sheet acts as a live mirror of the database.
-- **New sheet creation**: If `GOOGLE_SHEET_ID` is not set (or `--new` is used), a new spreadsheet is created. Optionally placed in a Drive folder via `GOOGLE_SHEET_FOLDER_ID`.
+- **In-place update**: If `GOOGLE_SHEET_ID` is set in `.env`, the target sheet
+  is cleared and repopulated with the current active DB mirror on each run.
+- **New sheet creation**: If `GOOGLE_SHEET_ID` is not set (or `--new` is used),
+  a new spreadsheet is created. Optionally placed in a Drive folder via
+  `GOOGLE_SHEET_FOLDER_ID`.
 
 ---
 
@@ -93,15 +108,14 @@ uv run python scripts/export_to_sheets.py --city medellin --portal maxibienes --
 ```
 
 ---
-
 ## What Happens
 
 1. Script loads `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` from `.env`
 2. On **first run**, opens a browser for OAuth consent. Token is saved to `~/.config/gworkspace-tools/token.json`. Subsequent runs reuse the saved token (including refresh).
-3. Reads all listings from `db.get_all()` with optional `--city` and `--portal` filters
+3. Reads PostgreSQL listings and applies the active-status, city, price, and property-type filters described above
 4. **If `GOOGLE_SHEET_ID` is set** (and `--new` not passed):
    - Clears ALL content from the existing sheet
-   - Rewrites fresh data with headers
+   - Rewrites the current active data with headers
    - Re-applies formatting (bold header, frozen row, column widths)
    - Deletes any extra sheets beyond the first one
    - The sheet URL stays the same — no new link to share
@@ -119,11 +133,15 @@ uv run python scripts/export_to_sheets.py --city medellin --portal maxibienes --
 | Missing `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Prints setup instructions and exits |
 | Token expired/revoked | Automatically re-triggers OAuth browser flow |
 | Database connection fails | Prints error and exits |
-| No listings found | Prints "No listings found" and exits gracefully |
+| No active listings match filters | Prints "No listings found" and exits gracefully |
 | Sheets API quota exceeded | Prints clear error message |
 | Invalid or inaccessible `GOOGLE_SHEET_ID` | Prints permission/not-found error and exits |
 | Invalid `GOOGLE_SHEET_FOLDER_ID` | Warns and places sheet in root instead |
 
+The full scraper pipeline writes a structured `SCRAPER_RESULT` marker for each
+portal. Its pre-write backup state is `success`, `skipped`, or `failed`; a
+required failed backup prevents both DB and Sheets writes. See
+`docs/operations.md` for pipeline recovery and zero-result semantics.
 ---
 
 ## Token Storage

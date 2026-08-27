@@ -10,9 +10,16 @@ metadata:
 
 ## What I Do
 
-Scrape rental listings from any real estate portal using **only Scrapling MCP tools**. No Python scripts, no regex, no CSS selectors — the agent fetches, sees, reasons, and extracts. Screenshots handle icon-only fields. Bulk tools handle pagination.
+This skill documents the **agentic fallback** for discovering a portal that
+does not yet have a production script. For existing portals, use the
+`scripts/scrape_{portal}.py` production path described in `AGENTS.md`.
 
-Output columns (always 11, in this order):
+Scrape rental listings from any real estate portal using Scrapling MCP tools.
+No Python scripts, regex, or hardcoded selectors are used for fallback field
+extraction. Screenshots handle icon-only fields and bulk tools handle
+pagination.
+
+Output columns (always 11 canonical listing fields):
 
 | # | Column | Type | Description |
 |---|--------|------|-------------|
@@ -174,11 +181,30 @@ scrapling_bulk_get(
 
 Ask: CSV or PostgreSQL?
 
-**CSV**: Write `results/{portal}_arriendos_{ciudad}.csv` (UTF-8, comma, 11 columns).
+**CSV**: Write `results/{portal}_arriendos_{ciudad}.csv` (UTF-8, comma, 11
+columns; city is encoded in the filename).
 
-**PostgreSQL**: Write listings as JSON → `uv run python scripts/insert_listings.py <json> <ciudad>`.
+**PostgreSQL**: Write listings as JSON and call
+`uv run python scripts/insert_listings.py <json> <ciudad>`. The explicit city
+argument is part of the DB contract: it scopes deactivation and upsert, even
+when row dictionaries do not contain a city field. PostgreSQL adds `ciudad`,
+`status`, and `scraped_at` to the 11 canonical fields.
+
+For a Google Sheets live mirror, export from PostgreSQL only after a completed
+DB scrape. Sheets receives active rows matching the requested city, minimum
+price, and allowed residential types; it is not a raw CSV dump. See
+`docs/columns-spec.md` and `skills/db-to-sheets/SKILL.md`.
 
 ---
+## Result semantics
+
+The production CLI emits one `SCRAPER_RESULT {json}` line with `portal`,
+`status`, and `listings`; the orchestrator parses this marker instead of
+human-readable summaries. A zero-result sample is a health failure, while a
+successful full scrape may have a low nonzero count. Missing or malformed
+markers are technical failures. A required pre-write DB backup failure blocks
+both database writes and Sheets export; see `docs/operations.md`.
+
 
 ### Phase 4: Report
 

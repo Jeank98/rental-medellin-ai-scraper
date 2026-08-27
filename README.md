@@ -82,51 +82,43 @@ failure:
 uv run python scripts/run_all.py --workers 12 --fail-fast
 ```
 
-With this flag, a health-check failure aborts before the backup and scrape
-phases. A scrape failure stops new scrapers and skips the Google Sheets export.
-Only jobs that were already running when the failure was observed may finish;
-no new jobs are started after that point.
+With this flag, a health-check failure aborts before backup and scrape phases.
+A scrape failure stops new scrapers and skips the Google Sheets export. A
+required backup failure always blocks scraper DB writes and Sheets, even
+without `--fail-fast`. Only jobs already running when a failure is observed
+may finish; no new jobs are started after that point.
 
-Before any health check, agents should verify the environment:
-
-```bash
-uv run python scripts/check_runtime.py
-```
-
-The check imports Scrapling, its `curl_cffi` transport, database, HTML, browser,
-and Google Sheets dependencies, plus the shared `scrape` package import chain,
-without reading `.env` or contacting a service.
+For the phase/failure matrix, backup restore guidance, report inspection, and
+OAuth recovery, see [`docs/operations.md`](docs/operations.md).
 
 ## Troubleshooting
 
 ### `ModuleNotFoundError` before any HTTP request
 
-If a portal CLI fails while importing `scrape`, run the runtime check first:
+If a portal CLI fails while importing a scraper adapter, run the runtime check
+first:
 
 ```bash
 uv run python scripts/check_runtime.py
 ```
 
-The previous repository state had no `pyproject.toml`, `uv.lock`, or project
-environment. A bare `uv run` therefore had no dependency manifest from which
-to provision Scrapling. Because `scrape/__init__.py` eagerly imports
-`fetcher`, every portal CLI could fail at import time before making an HTTP
-request.
+The shared `scrape` package has a lightweight import seam: `import scrape`
+does not load portal adapters or their third-party dependencies. Accessing a
+public export such as `scrape.fetch_page` loads only its owning module, so
+missing dependencies are isolated and diagnosed at the point of use.
 
-This repository now includes `pyproject.toml` and `uv.lock`. From a fresh
+This repository includes `pyproject.toml` and `uv.lock`. From a fresh
 worktree, run `uv sync` to provision the locked environment, then rerun the
 smoke check. Keep using `uv run` rather than a system `python` so commands use
 that project environment.
 
 ### Deferred Scrapling transport imports
 
-Scrapling lazily imports its HTTP transport when a fetcher is first loaded.
-Seeing `ModuleNotFoundError: curl_cffi` (or another Scrapling transport module)
-after the package smoke check means the environment was not fully provisioned.
-The manifest includes `scrapling[fetchers]` and a direct bounded `curl-cffi`
-dependency; run `uv sync` and rerun `scripts/check_runtime.py`. The smoke check
-imports Scrapling's static and browser transports without making a network
-request.
+Scrapling may load its HTTP transport when a fetcher is first used. Seeing
+`ModuleNotFoundError: curl_cffi` (or another transport module) after the
+package smoke check means the environment was not fully provisioned; run
+`uv sync` and rerun `scripts/check_runtime.py`. The smoke check imports
+Scrapling's static and browser transports without making a network request.
 
 ## Project Structure
 ```
@@ -227,6 +219,20 @@ rental-medellin-ai-scraper/
 | 9 | `estrato` | int | Socioeconomic level (1-6, Colombia) |
 | 10 | `barrio` | str | Neighborhood |
 | 11 | `url` | str | Property detail page URL |
+
+CSV is intentionally the compact 11-column interchange format. PostgreSQL
+stores the 11 listing fields plus `ciudad`, `status`, and `scraped_at`; callers
+must pass the batch city explicitly to `db.insert_listings(rows, ciudad=...)`
+so deactivation and upsert remain city-scoped. Google Sheets exports the full
+14-column database shape, but only active rows for the requested city with
+`precio >= 200000` and an allowed residential `tipo`.
+
+Each portal CLI emits one `SCRAPER_RESULT {json}` stdout marker containing
+`portal`, `status`, and `listings`; the orchestrator uses this marker rather
+than parsing human-readable text. Backup state is explicit in reports:
+`success`, `skipped`, or `failed`; a required failed backup blocks DB and
+Sheets writes. See [`docs/operations.md`](docs/operations.md) for zero-result
+and recovery semantics.
 
 ## Portal Coverage
 

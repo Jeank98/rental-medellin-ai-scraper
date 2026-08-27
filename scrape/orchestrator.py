@@ -4,10 +4,12 @@ estate portals in parallel with health checks, validation, and DB backup.
 """
 
 import concurrent.futures
+import json
 import os
 import subprocess
 import time
 from pathlib import Path
+from typing import Literal, TypedDict
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from scrape.report import compact_console_text, generate_report
@@ -42,32 +44,71 @@ PORTALS = {
     "zitios": {"module": "zitios"},
 }
 
+SCRAPER_RESULT_PREFIX = "SCRAPER_RESULT "
 
-def _script_name(portal: str) -> str:
-    entry = PORTALS.get(portal, {})
-    return entry.get("script", portal)
+
+class BackupOutcome(TypedDict):
+    """Stable state returned by :func:`backup_db` and persisted in reports."""
+
+    status: Literal["success", "skipped", "failed"]
+    path: str | None
+    error: str | None
+    reason: str | None
+
+
+def _backup_outcome(
+    status: Literal["success", "skipped", "failed"],
+    path: str | None = None,
+    error: str | None = None,
+    reason: str | None = None,
+) -> BackupOutcome:
+    return {
+        "status": status,
+        "path": path,
+        "error": error,
+        "reason": reason,
+    }
+
+
+def _parse_scraper_result(output: str) -> dict:
+    """Parse and validate the CLI's machine-readable result marker.
+
+    Human-readable output is intentionally ignored.  A missing, duplicate, or
+    malformed marker is an execution failure rather than an implicit zero.
+    """
+    marker_lines = [
+        line.strip()
+        for line in output.splitlines()
+        if line.strip().startswith(SCRAPER_RESULT_PREFIX)
+    ]
+    if not marker_lines:
+        raise ValueError("missing SCRAPER_RESULT marker")
+    if len(marker_lines) != 1:
+        raise ValueError("multiple SCRAPER_RESULT markers")
+
+    raw_payload = marker_lines[0][len(SCRAPER_RESULT_PREFIX):]
+    try:
+        payload = json.loads(raw_payload)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"malformed SCRAPER_RESULT marker: {error.msg}") from error
+
+    if not isinstance(payload, dict):
+        raise ValueError("malformed SCRAPER_RESULT marker: expected JSON object")
+    status = payload.get("status")
+    portal = payload.get("portal")
+    listings = payload.get("listings")
+    if status not in {"success", "failed"}:
+        raise ValueError("malformed SCRAPER_RESULT marker: invalid status")
+    if not isinstance(portal, str) or not portal:
+        raise ValueError("malformed SCRAPER_RESULT marker: invalid portal")
+    if isinstance(listings, bool) or not isinstance(listings, int) or listings < 0:
+        raise ValueError("malformed SCRAPER_RESULT marker: invalid listings")
+    return payload
 
 
 def _parse_listing_count(output: str) -> int:
-    for line in output.splitlines():
-        line = line.strip()
-        if line.startswith("Sample: "):
-            # "Sample: N listing(s) extracted"
-            parts = line.split()
-            if len(parts) >= 2:
-                try:
-                    return int(parts[1])
-                except (ValueError, IndexError):
-                    pass
-        elif line.startswith("Scraped "):
-            # "Scraped N listings from portal"
-            parts = line.split()
-            if len(parts) >= 2:
-                try:
-                    return int(parts[1])
-                except (ValueError, IndexError):
-                    pass
-    return 0
+    """Backward-compatible count helper backed by the structured marker."""
+    return _parse_scraper_result(output)["listings"]
 
 
 def health_check(portals: dict, timeout: int = 300, verbose: bool = True) -> list[dict]:
@@ -96,19 +137,40 @@ def health_check(portals: dict, timeout: int = 300, verbose: bool = True) -> lis
             retry_delay=RETRY_DELAY_SECONDS,
         )
         elapsed = result.elapsed
-        listings = _parse_listing_count(result.stdout)
+        marker: dict = {}
+        marker_error: str | None = None
+        try:
+            marker = _parse_scraper_result(result.stdout)
+            listings = marker["listings"]
+        except ValueError as error:
+            listings = 0
+            marker_error = str(error)
+
+        error_msg = marker_error or result.error or f"exit code {result.returncode}"
         if result.returncode != 0:
-            error_msg = result.error or f"exit code {result.returncode}"
             if verbose:
                 print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s, {result.attempts} attempts) — {compact_console_text(error_msg, 60)}")
-            return {"portal": portal, "healthy": False, "listings": listings, "elapsed": elapsed, "attempts": result.attempts, "error": error_msg}
+            return {
+                "portal": portal, "healthy": False, "listings": listings,
+                "status": marker.get("status"), "elapsed": elapsed,
+                "attempts": result.attempts, "error": error_msg,
+            }
+        if marker_error or marker.get("status") != "success":
+            error_msg = marker_error or marker.get("error") or "scraper reported failure"
+            if verbose:
+                print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s) — {compact_console_text(error_msg, 60)}")
+            return {
+                "portal": portal, "healthy": False, "listings": listings,
+                "status": marker.get("status"), "elapsed": elapsed,
+                "attempts": result.attempts, "error": error_msg,
+            }
         if listings == 0:
             if verbose:
                 print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s) — 0 listings")
-            return {"portal": portal, "healthy": False, "listings": 0, "elapsed": elapsed, "attempts": result.attempts, "error": "0 listings returned"}
+            return {"portal": portal, "healthy": False, "listings": 0, "status": "success", "elapsed": elapsed, "attempts": result.attempts, "error": "0 listings returned"}
         if verbose:
             print(f"\r  ✅ {portal:30s} {listings:>4d} listings ({elapsed:.1f}s)")
-        return {"portal": portal, "healthy": True, "listings": listings, "elapsed": elapsed, "attempts": result.attempts, "error": None}
+        return {"portal": portal, "healthy": True, "listings": listings, "status": "success", "elapsed": elapsed, "attempts": result.attempts, "error": None}
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(portal_keys)) as executor:
         futures = {executor.submit(_check, p): p for p in portal_keys}
@@ -158,15 +220,40 @@ def parallel_scrape(
             retry_delay=RETRY_DELAY_SECONDS,
         )
         elapsed = result.elapsed
-        listings = _parse_listing_count(result.stdout)
+        marker: dict = {}
+        marker_error: str | None = None
+        try:
+            marker = _parse_scraper_result(result.stdout)
+            listings = marker["listings"]
+        except ValueError as error:
+            listings = 0
+            marker_error = str(error)
+
+        error_msg = marker_error or result.error or f"exit code {result.returncode}"
         if result.returncode != 0:
-            error_msg = result.error or f"exit code {result.returncode}"
             if verbose:
                 print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s, {result.attempts} attempts) — {compact_console_text(error_msg, 60)}")
-            return {"portal": portal, "success": False, "listings": listings, "elapsed": elapsed, "attempts": result.attempts, "error": error_msg}
+            return {
+                "portal": portal, "success": False, "listings": listings,
+                "status": marker.get("status"), "elapsed": elapsed,
+                "attempts": result.attempts, "error": error_msg,
+            }
+        if marker_error or marker.get("status") != "success":
+            error_msg = marker_error or marker.get("error") or "scraper reported failure"
+            if verbose:
+                print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s) — {compact_console_text(error_msg, 60)}")
+            return {
+                "portal": portal, "success": False, "listings": listings,
+                "status": marker.get("status"), "elapsed": elapsed,
+                "attempts": result.attempts, "error": error_msg,
+            }
         if verbose:
             print(f"\r  ✅ {portal:30s} {listings:>5d} listings ({_fmt_time(elapsed)})")
-        return {"portal": portal, "success": True, "listings": listings, "elapsed": elapsed, "attempts": result.attempts, "error": None}
+        return {
+            "portal": portal, "success": True, "listings": listings,
+            "status": "success", "elapsed": elapsed,
+            "attempts": result.attempts, "error": None,
+        }
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
         if not fail_fast:
@@ -252,10 +339,12 @@ def validate_results(
     scrape_results: list[dict],
     portals: dict | None = None,
     health_results: list[dict] | None = None,
+    backup_outcome: BackupOutcome | dict | None = None,
 ) -> dict:
     """Validate technical execution results without judging inventory size.
 
-    Returns {passed: bool, warnings: [str]}.
+    A failed required backup is a blocking warning.  ``skipped`` outcomes are
+    reported separately and do not fail validation by themselves.
     """
     warnings: list[str] = []
 
@@ -273,6 +362,12 @@ def validate_results(
 
         if not success and not r.get("cancelled", False):
             warnings.append(f"{portal}: FAILED — {error or 'unknown error'}")
+
+    if backup_outcome and backup_outcome.get("status") == "failed":
+        warnings.append(
+            "backup: BACKUP FAILED — "
+            f"{backup_outcome.get('error') or 'unknown error'}"
+        )
 
     passed = len(warnings) == 0
     return {"passed": passed, "warnings": warnings}
@@ -297,30 +392,58 @@ def _fmt_time(seconds: float) -> str:
     return f"{mins}m {secs}s"
 
 
-def backup_db(backup_dir: str = "~/Projects/Backups", verbose: bool = True) -> str | None:
-    """Run pg_dump on the DATABASE_URL and save to backup_dir.
+def _coerce_backup_outcome(
+    value: BackupOutcome | dict | str | None,
+    *,
+    default_reason: str | None = None,
+) -> BackupOutcome:
+    """Normalize legacy test/adaptor return values at the pipeline seam."""
+    if isinstance(value, dict):
+        status = value.get("status")
+        if status in {"success", "skipped", "failed"}:
+            return _backup_outcome(
+                status,
+                value.get("path"),
+                value.get("error"),
+                value.get("reason") or default_reason,
+            )
+    if isinstance(value, str) and value:
+        return _backup_outcome("success", path=value, reason=default_reason)
+    return _backup_outcome("skipped", reason=default_reason)
 
-    Strips &channel_binding=require for pg_dump compatibility.
-    Returns the backup file path or None on failure.
+
+def backup_db(
+    backup_dir: str = "~/Projects/Backups",
+    verbose: bool = True,
+) -> BackupOutcome:
+    """Run pg_dump and return an explicit success, skip, or failure outcome.
+
+    ``path`` is the completed backup path on success and the attempted path on
+    a command failure when it could be known.  Missing ``DATABASE_URL`` is an
+    intentional skip, while a failed ``pg_dump`` is a required-backup failure.
     """
     db_url = os.environ.get("DATABASE_URL")
     if not db_url:
-        return None
+        return _backup_outcome(
+            "skipped",
+            reason="missing_database_url",
+            error="DATABASE_URL not set",
+        )
 
-    backup_path = Path(backup_dir).expanduser()
-    backup_path.mkdir(parents=True, exist_ok=True)
-
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    dump_file = backup_path / f"rental_scraper_{timestamp}.sql"
-
-    clean_url = _clean_db_url(db_url)
-
-    if verbose:
-        print(f"\n{'='*50}")
-        print(f"  DB BACKUP → {dump_file}")
-        print(f"{'='*50}")
-
+    dump_file: Path | None = None
     try:
+        backup_path = Path(backup_dir).expanduser()
+        backup_path.mkdir(parents=True, exist_ok=True)
+
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        dump_file = backup_path / f"rental_scraper_{timestamp}.sql"
+        clean_url = _clean_db_url(db_url)
+
+        if verbose:
+            print(f"\n{'='*50}")
+            print(f"  DB BACKUP → {dump_file}")
+            print(f"{'='*50}")
+
         subprocess.run(
             ["pg_dump", clean_url, "--no-owner", "--no-acl", "-f", str(dump_file)],
             capture_output=True,
@@ -331,11 +454,16 @@ def backup_db(backup_dir: str = "~/Projects/Backups", verbose: bool = True) -> s
         file_size = dump_file.stat().st_size
         if verbose:
             print(f"  ✅ Backup complete — {file_size / 1024:.0f} KB\n")
-        return str(dump_file)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
+        return _backup_outcome("success", path=str(dump_file))
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as error:
         if verbose:
-            print(f"  ❌ Backup FAILED — {e}\n")
-        return None
+            print(f"  ❌ Backup FAILED — {error}\n")
+        return _backup_outcome(
+            "failed",
+            path=str(dump_file) if dump_file else None,
+            error=str(error),
+            reason="pg_dump_failed",
+        )
 
 
 def export_to_sheets(ciudad: str = "medellin", verbose: bool = True) -> dict:
@@ -394,39 +522,87 @@ def run_pipeline(
     health_failed = fail_fast and any(
         not result.get("healthy", False) for result in health_results
     )
-    backup_path: str | None = None
     scrape_results: list[dict] = []
 
     if health_failed:
+        backup_outcome = _backup_outcome(
+            "skipped",
+            reason="health_abort",
+            error="health check failed",
+        )
         print("\n  ❌ Fail-fast: health check failed; stopping before backup and scrape\n")
     else:
-        # Phase 2: Backup OLD state BEFORE scraping
-        if not skip_backup:
-            backup_path = backup_db(verbose=True)
+        # Phase 2: Backup OLD state BEFORE scraping.
+        if skip_backup:
+            backup_outcome = _backup_outcome("skipped", reason="operator")
+        else:
+            try:
+                backup_outcome = _coerce_backup_outcome(backup_db(verbose=True))
+            except Exception as error:
+                backup_outcome = _backup_outcome(
+                    "failed",
+                    error=str(error),
+                    reason="backup_exception",
+                )
 
-        # Phase 3: Parallel scrape — only healthy portals
-        healthy_portals = [r["portal"] for r in health_results if r.get("healthy", False)]
-        if healthy_portals:
-            scrape_results = parallel_scrape(
-                healthy_portals,
-                workers=workers,
-                ciudad=ciudad,
-                verbose=True,
-                fail_fast=fail_fast,
+        backup_failed = backup_outcome["status"] == "failed"
+        if backup_failed:
+            print(
+                "\n  ❌ Required DB backup failed; stopping before scrape and Sheets\n"
             )
         else:
-            print("\n  ⚠️  No healthy portals to scrape\n")
+            # Phase 3: Parallel scrape — only healthy portals.
+            healthy_portals = [
+                r["portal"] for r in health_results if r.get("healthy", False)
+            ]
+            if healthy_portals:
+                scrape_results = parallel_scrape(
+                    healthy_portals,
+                    workers=workers,
+                    ciudad=ciudad,
+                    verbose=True,
+                    fail_fast=fail_fast,
+                )
+            else:
+                print("\n  ⚠️  No healthy portals to scrape\n")
+
+    backup_path = backup_outcome.get("path")
 
     # Phase 4: Validation
-    validation = validate_results(scrape_results, PORTALS, health_results)
+    validation = validate_results(
+        scrape_results,
+        PORTALS,
+        health_results,
+        backup_outcome,
+    )
     scrape_failed = fail_fast and any(
         not result.get("success", False) for result in scrape_results
     )
-    sheet_result = (
-        {"success": True, "skipped": True, "attempts": 0, "elapsed": 0.0, "error": None}
-        if skip_sheet or health_failed or scrape_failed
-        else export_to_sheets(ciudad)
-    )
+    backup_failed = backup_outcome["status"] == "failed"
+
+    if skip_sheet:
+        sheet_result = {
+            "success": True, "skipped": True, "reason": "operator",
+            "attempts": 0, "elapsed": 0.0, "error": None,
+        }
+    elif health_failed:
+        sheet_result = {
+            "success": True, "skipped": True, "reason": "health_abort",
+            "attempts": 0, "elapsed": 0.0, "error": None,
+        }
+    elif backup_failed:
+        sheet_result = {
+            "success": True, "skipped": True, "reason": "backup_failure",
+            "attempts": 0, "elapsed": 0.0, "error": None,
+        }
+    elif scrape_failed:
+        sheet_result = {
+            "success": True, "skipped": True, "reason": "scrape_failure",
+            "attempts": 0, "elapsed": 0.0, "error": None,
+        }
+    else:
+        sheet_result = export_to_sheets(ciudad)
+
     if not sheet_result["success"]:
         validation["warnings"].append(
             f"sheets: EXPORT FAILED — {sheet_result.get('error') or 'unknown error'}"
@@ -448,6 +624,7 @@ def run_pipeline(
         backup_path,
         total_time,
         sheet_result,
+        backup_outcome=backup_outcome,
     )
     print(report)
 
@@ -458,7 +635,9 @@ def run_pipeline(
                 "health": health_results,
                 "scrape": scrape_results,
                 "validation": validation,
+                # Keep backup_path for consumers of the original report shape.
                 "backup_path": backup_path,
+                "backup": backup_outcome,
                 "sheet": sheet_result,
                 "total_time": total_time,
             },

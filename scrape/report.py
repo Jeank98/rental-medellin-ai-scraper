@@ -148,10 +148,27 @@ def _generate_summary_section(
     scrape_results: list[dict],
     total_time: float,
     sheet_result: dict | None = None,
+    backup_outcome: dict | None = None,
 ) -> list[str]:
     lines: list[str] = []
     lines.append(_sep_border())
-    if backup_path is None:
+
+    if backup_outcome:
+        backup_status = backup_outcome.get("status")
+        if backup_status == "failed":
+            detail = compact_console_text(
+                backup_outcome.get("error") or "unknown error",
+                INNER_WIDTH - len("BACKUP: FAILED ") - 1,
+            )
+            lines.append(_content_line(f"BACKUP: FAILED {detail}"))
+        elif backup_status == "success":
+            lines.append(_content_line(f"BACKUP: {backup_path or 'completed'}"[:INNER_WIDTH]))
+        elif backup_outcome.get("reason") == "health_abort":
+            lines.append(_content_line("BACKUP: NOT RUN (HEALTH ABORT)"))
+        else:
+            lines.append(_content_line("BACKUP: SKIPPED"))
+    elif backup_path is None:
+        # Compatibility for callers using the original path-only interface.
         lines.append(_content_line("BACKUP: SKIPPED"))
     else:
         lines.append(_content_line(f"BACKUP: {backup_path}"[:INNER_WIDTH]))
@@ -180,18 +197,13 @@ def generate_report(
     backup_path: str | None,
     total_time: float,
     sheet_result: dict | None = None,
+    backup_outcome: dict | None = None,
 ) -> str:
     """Generate a box-drawn console report for the orchestrator.
 
-    Args:
-        health_results: List of health check results per portal.
-        scrape_results: List of scrape results per portal.
-        validation: Dict with 'passed' (bool) and 'warnings' (list[str]).
-        backup_path: Path to backup file, or None if skipped.
-        total_time: Total elapsed seconds.
-
-    Returns:
-        Formatted string suitable for printing to a terminal.
+    ``backup_path`` remains part of the compatibility interface.  New callers
+    should also provide ``backup_outcome`` so failed, skipped, and health-abort
+    states are rendered distinctly.
     """
     lines: list[str] = []
 
@@ -210,7 +222,15 @@ def generate_report(
     lines.extend(_generate_validation_section(validation))
 
     # Summary (backup, db update, total time)
-    lines.extend(_generate_summary_section(backup_path, scrape_results, total_time, sheet_result))
+    lines.extend(
+        _generate_summary_section(
+            backup_path,
+            scrape_results,
+            total_time,
+            sheet_result,
+            backup_outcome,
+        )
+    )
 
     # Footer
     lines.append(_bot_border())

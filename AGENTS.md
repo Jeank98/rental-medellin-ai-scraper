@@ -116,9 +116,12 @@ All 21 portals have standalone executable scripts at `scripts/scrape_{portal}.py
 
 ### Running all portals at once
 
-Run the runtime check before the health-check pipeline:
+For setup, normal/fail-fast operation, failure states, backup recovery, and
+zero-result semantics, see [`docs/operations.md`](docs/operations.md). The
+short production path is:
 
 ```
+uv sync
 uv run python scripts/check_runtime.py
 uv run python scripts/run_all.py --workers 21
 ```
@@ -126,18 +129,23 @@ uv run python scripts/run_all.py --workers 21
 Options:
 - `--workers N` — concurrent scrapers (default 4, max 21 for full parallel)
 - `--ciudad` — city filter (default `medellin`)
-- `--skip-backup` — skip pg_dump before scraping
+- `--skip-backup` — explicitly skip pg_dump before scraping
 - `--skip-health` — skip health check (run all scrapers regardless)
 - `--skip-sheet` — skip the post-DB Google Sheets export
 - `--fail-fast` — stop scheduling new scrapers after the first failure
 - `--report-dir` — directory for timestamped JSON execution reports (default `runtime/scraper-runs`)
 - `--verbose` — detailed logging
 
-The orchestrator retries technical health-check and full-scrape failures once. It does not reject successful runs based on listing counts. Each portal DB replacement is atomic; a failed write returns a non-zero status and preserves the previous portal snapshot. Sheets export runs after the DB phase unless explicitly skipped.
+The orchestrator retries technical health-check and full-scrape failures once.
+Each portal DB replacement is atomic; a failed write returns a non-zero status
+and preserves the previous portal snapshot. Sheets is a live mirror of active
+rows matching city, minimum price, and allowed property type filters. A failed
+required backup blocks scraper and Sheets writes; `--skip-backup` is recorded as
+an intentional skip.
 
 With `--fail-fast`, a health-check failure aborts before backup and scraping. A
-scrape failure stops new scrapers and skips Sheets export. Only jobs already
-running when the failure is observed may finish; no new jobs start afterward.
+scrape failure stops new scrapers and skips Sheets. Only jobs already running
+when the failure is observed may finish; no new jobs start afterward.
 
 ### Troubleshooting missing imports
 
@@ -261,24 +269,22 @@ To fill these fields, convert ADN to a **2-phase strategy** (like SantaFe, Santi
 
 **Why we haven't done it yet** (user decision 2026-06-01): punt to later. Cost-benefit: 2-phase adds ~30-60s per scrape but fills 3 fields × 137 rows. Reasonable enhancement for any future "improve data quality" pass.
 
-When implementing, also update:
-- `reference/portals/arrendamientosdelnorte.md` — remove 0s from the "Zero Genuineness" table
-- `scrape/validator.py` — remove ADN from the per-portal genuine-zeros whitelist
-- `scrape/arrendamientosdelnorte.py` — add Phase 2 loop
+### ⛔ NO REGEX RULE (agentic fallback only)
 
-### Tool requirements
-- Scrapling MCP must be configured in opencode.json (Docker: `pyd4vinci/scrapling`) — see `config/scrapling-mcp-setup.md`
-- The `real-estate-scraper` skill must be installed in `~/.config/opencode/skills/`
+This rule governs the **agentic fallback/documentation workflow**, not the
+production scripts. Production portal scripts are the primary execution path
+and may use the parsing techniques needed for their tested adapters.
 
-### ⛔ NO REGEX RULE (mandatory)
+For agentic fallback extraction, use Scrapling MCP tools
+(`scrapling_get`, `scrapling_screenshot`, `scrapling_bulk_get`) and the agent's
+reasoning guided by `docs/variable-detection.md`. Do not use static regex field
+extraction, hardcoded CSS selectors, or create one-off per-portal fallback
+scripts.
 
-**Zero static pattern matching.** This project uses Scrapling MCP tools (`scrapling_get`, `scrapling_screenshot`, `scrapling_bulk_get`) for ALL field extraction. The agent reads the rendered text output from Scrapling and uses its own reasoning to identify and extract fields — guided by `docs/variable-detection.md`.
-
-**Never use:**
-- `re.search`, `re.match`, `re.findall`, `re.compile` for field extraction
-- Hardcoded CSS selectors (`.alcobas`, `.garaje`) in Python code
-- Per-portal scraper scripts
-- `adaptive_extractor.py` or any regex-based extraction
+**Never use in the agentic fallback:**
+- `re.search`, `re.match`, `re.findall`, or `re.compile` for field extraction
+- Hardcoded CSS selectors (`.alcobas`, `.garaje`) in fallback reasoning
+- `adaptive_extractor.py` or any regex-based fallback extraction
 
 **Always use:**
 - `scrapling_get` to fetch pages and see their content

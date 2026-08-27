@@ -4,12 +4,35 @@ Provides argparse boilerplate and the run_scraper dispatcher.
 """
 
 import argparse
+import json
 import sys
 import textwrap
 
 from scrape.csv_writer import write_to_csv
 from scrape.db_writer import write_to_db
 from scrape.validator import validate
+
+
+RESULT_MARKER = "SCRAPER_RESULT "
+
+
+def _emit_result(
+    portal: str,
+    status: str,
+    listings: int,
+    error: str | None = None,
+) -> None:
+    """Emit the one-line machine-readable result consumed by the orchestrator."""
+    payload = {
+        "portal": portal,
+        "status": status,
+        "listings": listings,
+    }
+    if error:
+        payload["error"] = error
+    print(
+        f"{RESULT_MARKER}{json.dumps(payload, ensure_ascii=True, sort_keys=True)}"
+    )
 
 
 def create_parser(portal: str, description: str) -> argparse.ArgumentParser:
@@ -64,28 +87,27 @@ def create_parser(portal: str, description: str) -> argparse.ArgumentParser:
 def run_scraper(scraper_fn, portal: str = None, args: argparse.Namespace = None) -> int:
     """Run a scraper and handle output based on CLI args.
 
-    Args:
-        scraper_fn: Callable that returns a list of listing dicts.
-        portal: Portal name. Used for CSV/DB output paths and deactivate_listings
-                calls. May be overridden by `args.portal` if the user passed
-                `--portal` on the CLI. If not provided, falls back to
-                `scraper_fn.__name__` (backward compatibility for old scripts
-                that pass `lambda: scrape(...)` — the lambda's __name__ is
-                '<lambda>', so this is brittle; new scripts should pass an
-                explicit portal name).
-        args: Parsed argparse Namespace with --portal, --output, --ciudad,
-              --sample-only, --max-pages, --verbose.
+    Every completed invocation emits exactly one ``SCRAPER_RESULT`` line on
+    stdout.  Human-readable summaries remain available, but callers that need
+    counts must consume the structured marker rather than display text.
     """
     if portal is None:
         portal = scraper_fn.__name__ if hasattr(scraper_fn, '__name__') else 'unknown'
     portal = getattr(args, 'portal', None) or portal
 
-    rows = scraper_fn()
+    try:
+        rows = scraper_fn()
+    except Exception as error:
+        _emit_result(portal, "failed", 0, str(error))
+        print(f"Error: scraper failed for {portal}: {error}", file=sys.stderr)
+        return 1
 
     # SAMPLE-FIRST: if scraper returns 0 rows, exit with error
     if len(rows) == 0:
-        print(f"Error: 0 listings scraped from {portal}. Check the URL or network.", file=sys.stderr)
-        sys.exit(2)
+        error = f"0 listings scraped from {portal}"
+        _emit_result(portal, "failed", 0, error)
+        print(f"Error: {error}. Check the URL or network.", file=sys.stderr)
+        raise SystemExit(2)
 
     # Anomaly detection
     anomaly_count = 0
@@ -93,43 +115,54 @@ def run_scraper(scraper_fn, portal: str = None, args: argparse.Namespace = None)
         warnings = validate(row)
         if warnings:
             anomaly_count += len(warnings)
-            for w in warnings:
-                print(f"  [ANOMALY] {row.get('id', '?')} — {w}", file=sys.stderr)
+            for warning in warnings:
+                print(
+                    f"  [ANOMALY] {row.get('id', '?')} — {warning}",
+                    file=sys.stderr,
+                )
 
     if anomaly_count > 0:
-        print(f"\n{anomaly_count} anomaly(s) detected across {len(rows)} listings.", file=sys.stderr)
+        print(
+            f"\n{anomaly_count} anomaly(s) detected across {len(rows)} listings.",
+            file=sys.stderr,
+        )
         print()
 
     # --sample-only: print summary, don't write
     if args.sample_only:
+        _emit_result(portal, "success", len(rows))
         print(f"Sample: {len(rows)} listing(s) extracted")
-        if rows:
+        print()
+        print("Sample listing(s):")
+        for row in rows[:3]:
+            print(textwrap.indent(
+                '\n'.join(f"  {k}: {v}" for k, v in row.items()),
+                '  ',
+            ))
             print()
-            print("Sample listing(s):")
-            for row in rows[:3]:
-                print(textwrap.indent(
-                    '\n'.join(f"  {k}: {v}" for k, v in row.items()),
-                    '  ',
-                ))
-                print()
         return 0
 
-    # Write outputs
-    if args.output in ('csv', 'both'):
-        write_to_csv(rows, portal, args.ciudad)
+    try:
+        if args.output in ('csv', 'both'):
+            write_to_csv(rows, portal, args.ciudad)
 
-    if args.output in ('db', 'both'):
-        inserted = write_to_db(rows, portal, args.ciudad)
-        if isinstance(inserted, int) and inserted != len(rows):
-            print(
-                f"Error: DB write inserted {inserted}/{len(rows)} listings for {portal}; "
-                "the previous snapshot was preserved.",
-                file=sys.stderr,
-            )
-            return 1
+        if args.output in ('db', 'both'):
+            inserted = write_to_db(rows, portal, args.ciudad)
+            if isinstance(inserted, int) and inserted != len(rows):
+                error = (
+                    f"DB write inserted {inserted}/{len(rows)} listings for {portal}; "
+                    "the previous snapshot was preserved."
+                )
+                _emit_result(portal, "failed", len(rows), error)
+                print(f"Error: {error}", file=sys.stderr)
+                return 1
+    except Exception as error:
+        _emit_result(portal, "failed", len(rows), str(error))
+        print(f"Error: output write failed for {portal}: {error}", file=sys.stderr)
+        return 1
 
     print(f"Scraped {len(rows)} listings from {portal}")
-
+    _emit_result(portal, "success", len(rows))
     return 0
 
 
