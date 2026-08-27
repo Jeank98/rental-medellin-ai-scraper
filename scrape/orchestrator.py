@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
-from scrape.report import generate_report
+from scrape.report import compact_console_text, generate_report
 from scrape.process_runner import run_with_retries
 from scrape.run_report import write_json_report
 
@@ -100,7 +100,7 @@ def health_check(portals: dict, timeout: int = 300, verbose: bool = True) -> lis
         if result.returncode != 0:
             error_msg = result.error or f"exit code {result.returncode}"
             if verbose:
-                print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s, {result.attempts} attempts) — {error_msg[:60]}")
+                print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s, {result.attempts} attempts) — {compact_console_text(error_msg, 60)}")
             return {"portal": portal, "healthy": False, "listings": listings, "elapsed": elapsed, "attempts": result.attempts, "error": error_msg}
         if listings == 0:
             if verbose:
@@ -121,12 +121,24 @@ def health_check(portals: dict, timeout: int = 300, verbose: bool = True) -> lis
     return results
 
 
-def parallel_scrape(portal_keys: list[str], workers: int = 4, ciudad: str = "medellin", verbose: bool = True) -> list[dict]:
+def parallel_scrape(
+    portal_keys: list[str],
+    workers: int = 4,
+    ciudad: str = "medellin",
+    verbose: bool = True,
+    fail_fast: bool = False,
+) -> list[dict]:
     """Run full scrapes for the given portals in parallel.
 
     Each scraper writes directly to the database via --output db.
     Prints progress to stdout as each portal completes.
-    Returns list of {portal, success, listings, elapsed, error}.
+    Returns one result per portal that completed or was canceled. In fail-fast
+    mode, synthetic ``cancelled`` results identify submitted futures that could
+    not start and portals that were never submitted after a failure.
+
+    In fail-fast mode, keep no more than ``workers`` jobs submitted at a
+    time. A replacement is submitted only for a successful completion; the
+    first failed result stops new submissions and cancels pending futures.
     """
     results: list[dict] = []
 
@@ -150,17 +162,83 @@ def parallel_scrape(portal_keys: list[str], workers: int = 4, ciudad: str = "med
         if result.returncode != 0:
             error_msg = result.error or f"exit code {result.returncode}"
             if verbose:
-                print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s, {result.attempts} attempts) — {error_msg[:60]}")
+                print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s, {result.attempts} attempts) — {compact_console_text(error_msg, 60)}")
             return {"portal": portal, "success": False, "listings": listings, "elapsed": elapsed, "attempts": result.attempts, "error": error_msg}
         if verbose:
             print(f"\r  ✅ {portal:30s} {listings:>5d} listings ({_fmt_time(elapsed)})")
         return {"portal": portal, "success": True, "listings": listings, "elapsed": elapsed, "attempts": result.attempts, "error": None}
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {executor.submit(_scrape, p): p for p in portal_keys}
-        for future in concurrent.futures.as_completed(futures):
-            results.append(future.result())
+        if not fail_fast:
+            futures = {executor.submit(_scrape, p): p for p in portal_keys}
+            for future in concurrent.futures.as_completed(futures):
+                results.append(future.result())
+        else:
+            pending: dict[concurrent.futures.Future, str] = {}
+            next_portal = 0
+            cancelled_results: list[dict] = []
 
+            def _cancelled_result(portal: str, error: str) -> dict:
+                return {
+                    "portal": portal,
+                    "success": False,
+                    "cancelled": True,
+                    "listings": 0,
+                    "elapsed": 0.0,
+                    "attempts": 0,
+                    "error": error,
+                }
+
+            def _submit_next() -> bool:
+                nonlocal next_portal
+                if next_portal >= len(portal_keys):
+                    return False
+                portal = portal_keys[next_portal]
+                next_portal += 1
+                pending[executor.submit(_scrape, portal)] = portal
+                return True
+
+            for _ in range(min(workers, len(portal_keys))):
+                _submit_next()
+
+            failed = False
+            while pending:
+                done, _ = concurrent.futures.wait(
+                    pending,
+                    return_when=concurrent.futures.FIRST_COMPLETED,
+                )
+                completed: list[dict] = []
+                for future in done:
+                    portal = pending.pop(future)
+                    if future.cancelled():
+                        cancelled_results.append(
+                            _cancelled_result(portal, "cancelled before completion")
+                        )
+                    else:
+                        completed.append(future.result())
+                results.extend(completed)
+
+                if any(not result["success"] for result in completed):
+                    failed = True
+                    for future, portal in list(pending.items()):
+                        if future.cancel():
+                            pending.pop(future)
+                            cancelled_results.append(
+                                _cancelled_result(portal, "cancelled after fail-fast failure")
+                            )
+                    cancelled_results.extend(
+                        _cancelled_result(
+                            portal, "not submitted after fail-fast failure"
+                        )
+                        for portal in portal_keys[next_portal:]
+                    )
+                    next_portal = len(portal_keys)
+                elif not failed:
+                    for result in completed:
+                        if result["success"]:
+                            _submit_next()
+
+            results.extend(cancelled_results)
     if verbose:
         successful = sum(1 for r in results if r["success"])
         print(f"  ── {successful}/{len(results)} successful\n")
@@ -190,7 +268,7 @@ def validate_results(
         error = r.get("error")
         success = r.get("success", False)
 
-        if not success:
+        if not success and not r.get("cancelled", False):
             warnings.append(f"{portal}: FAILED — {error or 'unknown error'}")
 
     passed = len(warnings) == 0
@@ -265,7 +343,7 @@ def export_to_sheets(ciudad: str = "medellin", verbose: bool = True) -> dict:
         max_attempts=1,
     )
     if verbose and result.returncode != 0:
-        print(f"  ❌ Sheet export FAILED — {result.error or 'unknown error'}")
+        print(f"  ❌ Sheet export FAILED — {compact_console_text(result.error or 'unknown error', 60)}")
     return {
         "success": result.returncode == 0,
         "attempts": result.attempts,
@@ -281,8 +359,12 @@ def run_pipeline(
     skip_health: bool = False,
     skip_sheet: bool = False,
     report_dir: str = "runtime/scraper-runs",
+    fail_fast: bool = False,
 ) -> int:
     """Run the full 5-phase pipeline: health → backup → scrape → validate → report.
+
+    In fail-fast mode, a health failure aborts before backup or scraping, and a
+    scrape failure skips the Sheets export.
 
     Returns 0 on success, 1 if validation fails.
     """
@@ -306,24 +388,40 @@ def run_pipeline(
     else:
         health_results = health_check(PORTALS, verbose=True)
 
-    # Phase 2: Backup OLD state BEFORE scraping
+    health_failed = fail_fast and any(
+        not result.get("healthy", False) for result in health_results
+    )
     backup_path: str | None = None
-    if not skip_backup:
-        backup_path = backup_db(verbose=True)
-
-    # Phase 3: Parallel scrape — only healthy portals
-    healthy_portals = [r["portal"] for r in health_results if r.get("healthy", False)]
     scrape_results: list[dict] = []
-    if healthy_portals:
-        scrape_results = parallel_scrape(healthy_portals, workers=workers, ciudad=ciudad, verbose=True)
+
+    if health_failed:
+        print("\n  ❌ Fail-fast: health check failed; stopping before backup and scrape\n")
     else:
-        print("\n  ⚠️  No healthy portals to scrape\n")
+        # Phase 2: Backup OLD state BEFORE scraping
+        if not skip_backup:
+            backup_path = backup_db(verbose=True)
+
+        # Phase 3: Parallel scrape — only healthy portals
+        healthy_portals = [r["portal"] for r in health_results if r.get("healthy", False)]
+        if healthy_portals:
+            scrape_results = parallel_scrape(
+                healthy_portals,
+                workers=workers,
+                ciudad=ciudad,
+                verbose=True,
+                fail_fast=fail_fast,
+            )
+        else:
+            print("\n  ⚠️  No healthy portals to scrape\n")
 
     # Phase 4: Validation
     validation = validate_results(scrape_results, PORTALS, health_results)
+    scrape_failed = fail_fast and any(
+        not result.get("success", False) for result in scrape_results
+    )
     sheet_result = (
         {"success": True, "skipped": True, "attempts": 0, "elapsed": 0.0, "error": None}
-        if skip_sheet
+        if skip_sheet or health_failed or scrape_failed
         else export_to_sheets(ciudad)
     )
     if not sheet_result["success"]:
@@ -334,7 +432,7 @@ def run_pipeline(
     if validation["warnings"]:
         print(f"\n  ⚠️  Validation warnings:")
         for w in validation["warnings"]:
-            print(f"     {w}")
+            print(f"     {compact_console_text(w)}")
     else:
         print(f"\n  ✅ Validation: PASSED")
 
