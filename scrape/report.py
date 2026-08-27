@@ -11,6 +11,16 @@ INNER_WIDTH = 50  # content width between box borders
 TOTAL_WIDTH = INNER_WIDTH + 2  # including ║ borders
 
 
+def compact_console_text(value: object, max_length: int = INNER_WIDTH - 2) -> str:
+    """Collapse and cap diagnostics before placing them in fixed-width output."""
+    text = " ".join(str(value).split())
+    if len(text) <= max_length:
+        return text
+    if max_length <= 1:
+        return text[:max_length]
+    return f"{text[:max_length - 1]}…"
+
+
 def _status_icon(ok: bool) -> str:
     return "\u2705" if ok else "\u274c"
 
@@ -69,6 +79,8 @@ def _section_header(title: str) -> str:
 def _result_line(healthy: bool, portal: str, detail: str) -> str:
     icon = _status_icon(healthy)
     portal_text = f"{icon} {portal}"
+    max_detail_length = max(INNER_WIDTH - len(portal_text) - 2, 1)
+    detail = compact_console_text(detail, max_detail_length)
     inner = _pad_section(portal_text, detail)
     return f"\u2551{inner}\u2551"
 
@@ -125,7 +137,7 @@ def _generate_validation_section(validation: dict) -> list[str]:
         warnings = validation.get("warnings", [])
         if warnings:
             for w in warnings:
-                lines.append(_content_line(w[:INNER_WIDTH]))
+                lines.append(_content_line(compact_console_text(w)))
         else:
             lines.append(_content_line("(no warnings)"))
     return lines

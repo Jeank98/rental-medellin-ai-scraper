@@ -34,3 +34,13 @@ class TestProcessRunner(unittest.TestCase):
         self.assertEqual(result.returncode, 124)
         self.assertEqual(result.error, "timeout")
         self.assertEqual(result.attempts, 2)
+
+    def test_exhausted_failure_preserves_full_stderr(self):
+        stderr = " ".join(["detailed failure output"] * 80)
+        failure = subprocess.CompletedProcess([], 1, "", stderr)
+
+        with mock.patch("scrape.process_runner.subprocess.run", return_value=failure):
+            result = run_with_retries(["command"], timeout=10, max_attempts=1)
+
+        self.assertEqual(result.error, stderr)
+        self.assertEqual(result.stderr, stderr)

@@ -71,7 +71,7 @@ def run_with_retries(
         if attempt < attempts:
             time.sleep(retry_delay)
 
-    error = last_error or last_stderr[:200].strip() or f"exit code {last_returncode}"
+    error = last_error or last_stderr.strip() or f"exit code {last_returncode}"
     return CommandResult(
         last_returncode,
         last_stdout,

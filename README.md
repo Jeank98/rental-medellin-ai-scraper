@@ -2,6 +2,19 @@
 
 AI-agent-driven knowledge base for scraping real estate rental listings from Colombian portals. The agent discovers page structure dynamically — no hardcoded selectors. Output as CSV or to a PostgreSQL database.
 
+## Environment setup
+
+From the project root, provision the locked project environment before running
+health checks or scraper commands:
+
+```bash
+uv sync
+uv run python scripts/check_runtime.py
+```
+
+Use `uv run` for every Python command below. It selects the project environment
+and can recreate it from `pyproject.toml` and `uv.lock` in a fresh worktree.
+
 ## Quick Start
 
 ```bash
@@ -14,6 +27,7 @@ uv run python scripts/scrape_maxibienes.py --output db
 # Skip the health check and scrape all portals:
 uv run python scripts/run_all.py --skip-health --workers 12
 ```
+
 
 ### Setup
 
@@ -59,6 +73,61 @@ uv run python scripts/test_save.py
 ```
 The database is provider-agnostic — any PostgreSQL connection string works (Neon, Supabase, local, etc.).
 
+## Fail-fast operation
+
+Pass `--fail-fast` when a run should stop scheduling new work after the first
+failure:
+
+```bash
+uv run python scripts/run_all.py --workers 12 --fail-fast
+```
+
+With this flag, a health-check failure aborts before the backup and scrape
+phases. A scrape failure stops new scrapers and skips the Google Sheets export.
+Only jobs that were already running when the failure was observed may finish;
+no new jobs are started after that point.
+
+Before any health check, agents should verify the environment:
+
+```bash
+uv run python scripts/check_runtime.py
+```
+
+The check imports Scrapling, its `curl_cffi` transport, database, HTML, browser,
+and Google Sheets dependencies, plus the shared `scrape` package import chain,
+without reading `.env` or contacting a service.
+
+## Troubleshooting
+
+### `ModuleNotFoundError` before any HTTP request
+
+If a portal CLI fails while importing `scrape`, run the runtime check first:
+
+```bash
+uv run python scripts/check_runtime.py
+```
+
+The previous repository state had no `pyproject.toml`, `uv.lock`, or project
+environment. A bare `uv run` therefore had no dependency manifest from which
+to provision Scrapling. Because `scrape/__init__.py` eagerly imports
+`fetcher`, every portal CLI could fail at import time before making an HTTP
+request.
+
+This repository now includes `pyproject.toml` and `uv.lock`. From a fresh
+worktree, run `uv sync` to provision the locked environment, then rerun the
+smoke check. Keep using `uv run` rather than a system `python` so commands use
+that project environment.
+
+### Deferred Scrapling transport imports
+
+Scrapling lazily imports its HTTP transport when a fetcher is first loaded.
+Seeing `ModuleNotFoundError: curl_cffi` (or another Scrapling transport module)
+after the package smoke check means the environment was not fully provisioned.
+The manifest includes `scrapling[fetchers]` and a direct bounded `curl-cffi`
+dependency; run `uv sync` and rerun `scripts/check_runtime.py`. The smoke check
+imports Scrapling's static and browser transports without making a network
+request.
+
 ## Project Structure
 ```
 rental-medellin-ai-scraper/
@@ -66,6 +135,8 @@ rental-medellin-ai-scraper/
 ├── README.md                        # This file
 ├── .gitignore
 ├── .env.example                     # DB connection string template
+├── pyproject.toml                    # Runtime and development dependency manifest
+├── uv.lock                           # Locked dependency resolution
 ├── scrape/                          # Shared scraper package
 │   ├── __init__.py                  # Re-exports: fetcher, normalize, validate, writers
 │   ├── cli.py                       # Shared CLI argument parser + run_scraper helper
@@ -99,6 +170,7 @@ rental-medellin-ai-scraper/
 │   └── portadainmobiliaria.py       # POR scraper (REST API)
 ├── scripts/                         # Thin CLI entry points
 │   ├── run_all.py                   # Orchestrator: runs all 21 portals in parallel
+│   ├── check_runtime.py              # Import smoke check for runtime dependencies
 │   ├── scrape_maxibienes.py
 │   ├── scrape_albertoalvarez.py
 │   ├── scrape_alnago.py

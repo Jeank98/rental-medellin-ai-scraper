@@ -18,3 +18,11 @@ class TestRunReport(unittest.TestCase):
 
         self.assertEqual(payload["validation"]["passed"], True)
         self.assertTrue(path.name.startswith("scrape_"))
+
+    def test_preserves_long_errors_in_json(self):
+        error = "detailed stderr output " * 80
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(write_json_report(directory, {"scrape": [{"error": error}]}))
+            payload = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["scrape"][0]["error"], error)

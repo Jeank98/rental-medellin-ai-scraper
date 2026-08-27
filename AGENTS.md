@@ -2,6 +2,23 @@
 
 This project is a **knowledge base + tooling** for scraping real estate rental listings from Colombian portals. It provides 21 per-portal executable Python scripts (powered by a shared `scrape/` package), plus AI-agent reference documentation for portal discovery and field mapping.
 
+## Environment setup
+From the project root, provision the project environment before any health
+check or scraper command:
+
+```bash
+uv sync
+uv run python scripts/check_runtime.py
+```
+
+Use `uv run` for all Python commands. It uses the project environment and can
+recreate it from the checked-in `pyproject.toml` and `uv.lock` in a fresh
+worktree.
+
+The runtime check imports Scrapling, its `curl_cffi` transport, DB, HTML, browser,
+and Google Sheets dependencies, plus the shared `scrape` package import chain,
+without reading `.env` or contacting a service. Agents MUST run it before health checks.
+
 ## What every agent working with this project must know
 
 ### Project purpose
@@ -53,6 +70,10 @@ All 21 portals have standalone executable scripts at `scripts/scrape_{portal}.py
 ### Key files
 | File | Purpose |
 |---|---|
+| **Project environment** | |
+| `pyproject.toml` | Project metadata and direct runtime dependencies |
+| `uv.lock` | Locked dependency resolution used by `uv sync` and `uv run` |
+| `scripts/check_runtime.py` | Import smoke check for all runtime dependency groups |
 | **Scripts (primary production path)** | |
 | `scripts/run_all.py` | Orchestrator: runs all 21 scrapers with health check → DB backup → parallel scrape → validation → report |
 | `scripts/scrape_{portal}.py` × 21 | Per-portal CLI entry points (thin wrappers calling `scrape/{portal}.py`) |
@@ -75,6 +96,7 @@ All 21 portals have standalone executable scripts at `scripts/scrape_{portal}.py
 | `scripts/scrape_panoramainmobiliario.py` | Panorama CLI entry point |
 | `scrape/portadainmobiliaria.py` | Portada scraper (single-phase REST API, no detail pages) |
 | `scripts/scrape_portadainmobiliaria.py` | Portada CLI entry point |
+
 | `scrape/fetcher.py` | HTTP fetch utilities (requests, aiohttp, Scrapling, Playwright) |
 | `scrape/normalize.py` | Normalization functions (precio, tipo, estrato, garaje, barrio, URL) |
 | `scrape/validator.py` | Anomaly detection and validation |
@@ -94,7 +116,10 @@ All 21 portals have standalone executable scripts at `scripts/scrape_{portal}.py
 
 ### Running all portals at once
 
+Run the runtime check before the health-check pipeline:
+
 ```
+uv run python scripts/check_runtime.py
 uv run python scripts/run_all.py --workers 21
 ```
 
@@ -104,11 +129,42 @@ Options:
 - `--skip-backup` — skip pg_dump before scraping
 - `--skip-health` — skip health check (run all scrapers regardless)
 - `--skip-sheet` — skip the post-DB Google Sheets export
+- `--fail-fast` — stop scheduling new scrapers after the first failure
 - `--report-dir` — directory for timestamped JSON execution reports (default `runtime/scraper-runs`)
 - `--verbose` — detailed logging
 
 The orchestrator retries technical health-check and full-scrape failures once. It does not reject successful runs based on listing counts. Each portal DB replacement is atomic; a failed write returns a non-zero status and preserves the previous portal snapshot. Sheets export runs after the DB phase unless explicitly skipped.
 
+With `--fail-fast`, a health-check failure aborts before backup and scraping. A
+scrape failure stops new scrapers and skips Sheets export. Only jobs already
+running when the failure is observed may finish; no new jobs start afterward.
+
+### Troubleshooting missing imports
+
+If a portal CLI reports `ModuleNotFoundError` while importing `scrape`, run:
+
+```
+uv run python scripts/check_runtime.py
+```
+
+The old repository state had no `pyproject.toml`, `uv.lock`, or project
+environment. A bare `uv run` had no dependency manifest from which to provision
+Scrapling. Since `scrape/__init__.py` eagerly imports `fetcher`, every portal
+CLI could fail before making an HTTP request.
+
+The checked-in manifest and lockfile fix this for every worktree: run `uv sync`
+from the project root, rerun the runtime check, and keep using `uv run` rather
+than a system `python`.
+
+### Deferred Scrapling transport imports
+
+Scrapling lazily imports its HTTP transport when a fetcher is first loaded.
+Seeing `ModuleNotFoundError: curl_cffi` (or another Scrapling transport module)
+after the package smoke check means the environment was not fully provisioned.
+The manifest includes `scrapling[fetchers]` and a direct bounded `curl-cffi`
+dependency; run `uv sync` and rerun `scripts/check_runtime.py`. The smoke check
+imports Scrapling's static and browser transports without making a network
+request.
 ### Running a single portal
 
 ```
