@@ -44,6 +44,10 @@ PORTALS = {
     "zitios": {"module": "zitios"},
 }
 
+def _script_name(portal: str) -> str:
+    entry = PORTALS.get(portal, {})
+    return entry.get("script", portal)
+
 SCRAPER_RESULT_PREFIX = "SCRAPER_RESULT "
 
 

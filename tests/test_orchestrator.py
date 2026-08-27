@@ -4,8 +4,61 @@ import unittest
 from unittest.mock import patch
 
 from scrape import orchestrator
-from scrape.orchestrator import PORTALS, parallel_scrape, run_pipeline, validate_results
+from scrape.orchestrator import (
+    PORTALS,
+    health_check,
+    parallel_scrape,
+    run_pipeline,
+    validate_results,
+)
+from scrape.process_runner import CommandResult
 from scrape.report import generate_report
+
+
+class TestScriptResolution(unittest.TestCase):
+    def test_script_name_uses_alias_or_portal_key(self):
+        for portal, expected in (
+            ("arrendamientosdelnorte", "adn"),
+            ("zitios", "zitios"),
+            ("unknown", "unknown"),
+        ):
+            with self.subTest(portal=portal):
+                self.assertEqual(orchestrator._script_name(portal), expected)
+
+    def test_health_check_builds_command_with_script_alias(self):
+        result = CommandResult(
+            returncode=0,
+            stdout='SCRAPER_RESULT {"status":"success","portal":"arrendamientosdelnorte","listings":1}',
+            stderr="",
+            attempts=1,
+            elapsed=0.01,
+            error=None,
+        )
+
+        with patch(
+            "scrape.orchestrator.run_with_retries", return_value=result
+        ) as run:
+            health = health_check(
+                {"arrendamientosdelnorte": PORTALS["arrendamientosdelnorte"]},
+                timeout=1,
+                verbose=False,
+            )
+
+        run.assert_called_once()
+        self.assertEqual(
+            run.call_args.args[0],
+            [
+                "uv",
+                "run",
+                "python",
+                "scripts/scrape_adn.py",
+                "--sample-only",
+                "--output",
+                "csv",
+            ],
+        )
+        self.assertEqual(health[0]["portal"], "arrendamientosdelnorte")
+        self.assertTrue(health[0]["healthy"])
 
 
 class _FakeFuture:
