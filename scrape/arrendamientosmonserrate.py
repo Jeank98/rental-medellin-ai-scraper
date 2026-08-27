@@ -68,6 +68,13 @@ def _canonical_label(raw: str) -> str:
     return " ".join(raw.replace("\xa0", " ").split()).rstrip(":").strip().casefold()
 
 
+def _normalize_monserrate_tipo(raw) -> str:
+    cleaned = " ".join(str(raw or "").split()).strip(" .,;:")
+    if cleaned.casefold() == "casa unifamiliar":
+        cleaned = "casa"
+    return normalize_tipo(cleaned)
+
+
 def _parse_number_token(token: str) -> int:
     parts = token.replace(",", ".").split(".")
     if len(parts) > 1 and all(len(part) == 3 for part in parts[1:]):
@@ -216,7 +223,7 @@ def _merge_detail(listing: dict, detail: dict) -> None:
         f"MNS-{codigo}" if codigo else _fallback_id(listing.get("url", ""))
     )
     if detail.get("tipo"):
-        listing["tipo"] = normalize_tipo(detail["tipo"])
+        listing["tipo"] = _normalize_monserrate_tipo(detail["tipo"])
     if detail.get("area"):
         listing["area"] = _first_bounded_number(detail["area"], maximum=10_000)
 

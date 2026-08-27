@@ -47,6 +47,13 @@ def test_detail_parser_uses_attributes_table_and_sku_not_sidebar_options() -> No
     assert row["parqueaderos"] == 0
     assert "$" not in row["barrio"]
     assert "opci" not in row["barrio"].lower()
+
+
+def test_type_normalization_maps_punctuated_unifamiliar_house_to_casa() -> None:
+    row = _row()
+    _merge_detail(row, {"tipo": "casa unifamiliar."})
+
+    assert row["tipo"] == "casa"
 def test_detail_parser_bounds_first_valid_numeric_value() -> None:
     detail = {
         "area": "999999 m², 80 m²",

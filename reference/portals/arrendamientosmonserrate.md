@@ -12,7 +12,7 @@
 |--------|--------|---------|
 | `id` | `MNS-{code}` | Detail `span.sku_wrapper span.sku`; fallback `MNS-URL-{sha256(url)[:12]}` |
 | `portal` | `arrendamientosmonserrate` | Fixed |
-| `tipo` | Detail `table.shop_attributes` row (`<th>` `Tipo de inmueble`, `<td>` value) | Normalize lowercase |
+| `tipo` | Detail `table.shop_attributes` row (`<th>` `Tipo de inmueble`, `<td>` value) | Trim source punctuation, map `casa unifamiliar`→`casa`, normalize lowercase |
 | `precio` | Card `$N.NNN` | Strip `$` and `.` |
 | `area` | Detail attributes row `<th>` `Área`/`Area` | First bounded integer, max 10,000; absent→0 |
 | `habitaciones` | Detail attributes row `<th>` `Alcobas`/`Habitaciones` | First valid integer in 0–20; absent→0 |
