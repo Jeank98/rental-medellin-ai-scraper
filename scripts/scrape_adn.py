@@ -6,15 +6,15 @@ from scrape.cli import create_parser, run_scraper
 from scrape.arrendamientosdelnorte import scrape
 
 
-def main():
+def main() -> int:
     parser = create_parser('arrendamientosdelnorte', 'Scrape ADN rental listings')
     args = parser.parse_args()
 
     def arrendamientosdelnorte():
         return scrape(ciudad=args.ciudad, sample_only=args.sample_only, max_pages=args.max_pages, verbose=args.verbose)
 
-    run_scraper(scraper_fn=arrendamientosdelnorte, portal=args.portal, args=args)
+    return run_scraper(scraper_fn=arrendamientosdelnorte, portal=args.portal, args=args)
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

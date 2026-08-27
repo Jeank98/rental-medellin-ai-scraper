@@ -5,13 +5,14 @@ from scrape.cli import create_parser, run_scraper
 from scrape.arrendamientosmonserrate import scrape
 
 
-def main():
-    parser = create_parser(
-        'arrendamientosmonserrate',
-        'Scrape Arrendamientos Monserrate rental listings',
-    )
-    args = parser.parse_args()
-    run_scraper(
+def main(args=None) -> int:
+    if args is None:
+        parser = create_parser(
+            'arrendamientosmonserrate',
+            'Scrape Arrendamientos Monserrate rental listings',
+        )
+        args = parser.parse_args()
+    return run_scraper(
         scraper_fn=lambda: scrape(
             ciudad=args.ciudad,
             sample_only=args.sample_only,
@@ -23,4 +24,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
