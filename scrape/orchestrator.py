@@ -240,8 +240,11 @@ def parallel_scrape(
 
             results.extend(cancelled_results)
     if verbose:
-        successful = sum(1 for r in results if r["success"])
-        print(f"  ── {successful}/{len(results)} successful\n")
+        attempted_results = [r for r in results if not r.get("cancelled", False)]
+        successful = sum(1 for r in attempted_results if r["success"])
+        cancelled = len(results) - len(attempted_results)
+        suffix = f" ({cancelled} cancelled/not started)" if cancelled else ""
+        print(f"  ── {successful}/{len(attempted_results)} successful{suffix}\n")
     return results
 
 

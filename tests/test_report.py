@@ -22,6 +22,22 @@ class TestReportDiagnostics(unittest.TestCase):
         self.assertEqual(health[0]["error"], stderr)
         self.assertEqual(scrape[0]["error"], stderr)
         self.assertEqual(validation["warnings"], [f"example: FAILED — {stderr}"])
+    def test_summary_excludes_cancelled_portals_from_db_count(self):
+        scrape = [
+            {"portal": "one", "success": True, "listings": 3},
+            {
+                "portal": "two",
+                "success": False,
+                "cancelled": True,
+                "listings": 0,
+                "error": "not submitted after fail-fast failure",
+            },
+        ]
+
+        report = generate_report([], scrape, {"passed": False, "warnings": []}, None, 0.0)
+
+        self.assertIn("DB UPDATE: 3 listings across 1 portals", report)
+        self.assertNotIn("across 2 portals", report)
 
 
 if __name__ == "__main__":

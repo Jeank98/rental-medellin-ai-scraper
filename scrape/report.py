@@ -156,8 +156,9 @@ def _generate_summary_section(
     else:
         lines.append(_content_line(f"BACKUP: {backup_path}"[:INNER_WIDTH]))
 
-    total_listings = sum(r.get("listings", 0) for r in scrape_results)
-    total_portals = len(set(r.get("portal", "?") for r in scrape_results))
+    completed_results = [r for r in scrape_results if not r.get("cancelled", False)]
+    total_listings = sum(r.get("listings", 0) for r in completed_results)
+    total_portals = len(set(r.get("portal", "?") for r in completed_results))
     db_line = f"DB UPDATE: {total_listings:,} listings across {total_portals} portals"
     lines.append(_content_line(db_line))
 
