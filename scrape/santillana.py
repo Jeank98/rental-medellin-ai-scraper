@@ -129,6 +129,7 @@ def _parse_detail(html: str) -> dict:
 
 def _fetch_all_pages(max_pages=None, verbose=False) -> list[dict]:
     listings: list[dict] = []
+    seen_ids: set[str] = set()
     skipped = 0
     page = 1
 
@@ -150,6 +151,9 @@ def _fetch_all_pages(max_pages=None, verbose=False) -> list[dict]:
             if listing["precio"] > 50_000_000:
                 skipped += 1
                 continue
+            if listing["id"] in seen_ids:
+                continue
+            seen_ids.add(listing["id"])
             listings.append(listing)
 
         if verbose:

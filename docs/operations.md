@@ -87,9 +87,9 @@ portals.
 
 Sheets is a live mirror of the database's **active** rows only. The export also
 requires the requested city (case-insensitive), `precio >= 200000`, and an
-allowed residential `tipo` (`apartamento`, `apto`, `casa`, `casa-finca`, or
-`casa unifamiliar`). Inactive or delisted DB rows remain available for history
-but are not exported.
+allowed residential `tipo` (`apartamento`, `apto`, `apartaestudio`, `casa`,
+`casa-finca`, or `casa unifamiliar`). Inactive or delisted DB rows remain
+available for history but are not exported.
 
 If OAuth fails, confirm `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` without
 printing their values, then remove or re-authorize the token at

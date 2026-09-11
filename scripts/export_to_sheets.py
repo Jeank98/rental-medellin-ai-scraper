@@ -43,7 +43,14 @@ TOKEN_DIR = Path.home() / ".config" / "gworkspace-tools"
 TOKEN_FILE = TOKEN_DIR / "token.json"
 
 # Only export these property types (others are filtered out)
-ALLOWED_TIPOS = {"apartamento", "apto", "casa", "casa-finca", "casa unifamiliar"}
+ALLOWED_TIPOS = {
+    "apartamento",
+    "apto",
+    "apartaestudio",
+    "casa",
+    "casa-finca",
+    "casa unifamiliar",
+}
 
 # Minimum price in COP — anything below is likely an error or placeholder
 MIN_PRICE = 200_000

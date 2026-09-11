@@ -177,6 +177,7 @@ def scrape(ciudad='medellin', sample_only=False, max_pages=None, verbose=False) 
         max_pages = 3
 
     listings: list[dict] = []
+    seen_ids: set[str] = set()
     anomalies: list[str] = []
     page = 1
 
@@ -201,6 +202,11 @@ def scrape(ciudad='medellin', sample_only=False, max_pages=None, verbose=False) 
             print(f"  MHR: page {page} -> {len(page_listings)} listing(s)")
 
         for listing in page_listings:
+            listing_id = listing.get('id')
+            if listing_id and listing_id in seen_ids:
+                continue
+            if listing_id:
+                seen_ids.add(listing_id)
             listings.append(listing)
             warnings = validate(listing)
             if warnings:

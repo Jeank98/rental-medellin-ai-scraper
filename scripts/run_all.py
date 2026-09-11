@@ -5,6 +5,7 @@ sys.path.insert(0, '.')
 
 import argparse
 import logging
+from dotenv import load_dotenv
 from scrape.orchestrator import run_pipeline
 
 
@@ -31,6 +32,8 @@ def main():
     parser.add_argument("--verbose", action="store_true", help="Detailed logging")
 
     args = parser.parse_args()
+
+    load_dotenv()
 
     if args.verbose:
         logging.basicConfig(level=logging.INFO)

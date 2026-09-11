@@ -93,14 +93,15 @@ def test_sheets_fetch_is_active_city_price_and_type_filtered() -> None:
         {"id": "legacy", "ciudad": "Medellin", "precio": 250_000, "tipo": "casa"},
         {"id": "wrong-city", "status": "active", "ciudad": "Bogota", "precio": 900_000, "tipo": "casa"},
         {"id": "below-min", "status": "active", "ciudad": "Medellin", "precio": 199_999, "tipo": "casa"},
-        {"id": "wrong-type", "status": "active", "ciudad": "Medellin", "precio": 900_000, "tipo": "apartaestudio"},
+        {"id": "wrong-type", "status": "active", "ciudad": "Medellin", "precio": 900_000, "tipo": "local"},
+        {"id": "studio", "status": "active", "ciudad": "Medellin", "precio": 900_000, "tipo": "apartaestudio"},
     ]
     with mock.patch("scripts.export_to_sheets.get_all", return_value=rows):
         from scripts.export_to_sheets import fetch_listings
 
         result = fetch_listings(city="medellin")
 
-    assert [row["id"] for row in result] == ["active", "legacy"]
+    assert [row["id"] for row in result] == ["active", "legacy", "studio"]
 
 
 def test_backup_db_reports_missing_configuration_as_skip(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

@@ -21,8 +21,8 @@ filtered rows with formatting.
   treated as active)
 - requested city, case-insensitively
 - `precio >= 200.000 COP` — excludes placeholder/error listings
-- `tipo IN (apartamento, apto, casa, casa-finca, casa unifamiliar)` —
-  excludes commercial, lots, offices, and studios
+- `tipo IN (apartamento, apto, apartaestudio, casa, casa-finca, casa unifamiliar)` —
+  excludes commercial, lots, and offices
 
 Exported columns are the 14-column DB shape: the canonical 11 listing fields
 plus `ciudad`, `status`, and `scraped_at`. CSV output remains a separate

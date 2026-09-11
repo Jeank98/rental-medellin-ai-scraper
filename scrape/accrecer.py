@@ -147,6 +147,7 @@ def scrape(ciudad='medellin', sample_only=False, max_pages=None,
     """Scrape Acrecer rental listings for both Apartamento and Casa types."""
     types = ['Apartamento', 'Casa']
     all_listings: list[dict] = []
+    seen_ids: set[str] = set()
     anomalies: list[str] = []
 
     for tipo in types:
@@ -183,6 +184,10 @@ def scrape(ciudad='medellin', sample_only=False, max_pages=None,
 
             page_listings = parse_rsc_payload(html)
             for listing in page_listings:
+                listing_id = listing['id']
+                if listing_id in seen_ids:
+                    continue
+                seen_ids.add(listing_id)
                 warnings = validate(listing)
                 if warnings:
                     anomalies.extend(warnings)
