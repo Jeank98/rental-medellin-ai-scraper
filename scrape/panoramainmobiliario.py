@@ -13,6 +13,7 @@ signal.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import TypeAlias
 from urllib.parse import urlencode, urljoin, urlparse, urlunparse
 
@@ -54,6 +55,8 @@ _DETAIL_FIELDS = (
 _PRESERVE_CURRENT_FIELDS = frozenset(_DETAIL_FIELDS)
 MAX_PAGE_ATTEMPTS = 2
 POSTGRES_INTEGER_MAX = 2_147_483_647
+MAX_DETAIL_BATCH_ATTEMPTS = 2
+DETAIL_FETCH_WORKERS = 4
 
 COLUMNS = [
     "id",
@@ -75,6 +78,10 @@ DetailFields: TypeAlias = dict[str, str | int]
 
 class UnsupportedCityError(KeyError):
     """Raised when a city has no verified Panorama mapping."""
+
+
+class DetailEnrichmentError(RuntimeError):
+    """Raised when Panorama detail pages cannot be structurally enriched."""
 
 
 def _empty_listing() -> Listing:
@@ -338,6 +345,18 @@ def parse_detail_page(html: str) -> DetailFields:
 
     return fields
 
+def _has_barrio_evidence(row: Mapping[str, object]) -> bool:
+    """Return whether a prior snapshot contains reusable barrio evidence."""
+    value = row.get("barrio")
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _has_structured_detail(detail: DetailFields) -> bool:
+    """Return whether a response contains Panorama's residential detail block."""
+    return detail.get("tipo") in RESIDENTIAL_TYPES
+
+
+
 
 def merge_detail(row: Listing, detail: DetailFields) -> bool:
     """Merge positive detail values without replacing the filtered type."""
@@ -401,6 +420,7 @@ def _plan_phase_b(
         ciudad,
         _DETAIL_FIELDS,
         _PRESERVE_CURRENT_FIELDS,
+        prior_detail_evidence=_has_barrio_evidence,
     )
     logger.info(
         "PAN detail reuse: %d reused, %d detail pages to fetch",
@@ -420,14 +440,43 @@ def _phase_b(
     verbose: bool,
     reuse_unchanged_details: bool,
 ) -> list[Listing]:
-    """Fetch only detail pages that cannot safely use the active snapshot."""
+    """Enrich details, retry unusable responses, and reject broken batches."""
     plan = _plan_phase_b(listings, ciudad, reuse_unchanged_details)
-    detail_urls = [str(row["url"]) for row in plan.detail_listings if row["url"]]
-    detail_map = dict(bulk_fetch(detail_urls)) if detail_urls else {}
-    for row in plan.detail_listings:
-        html = detail_map.get(str(row["url"]), "")
-        if html:
-            merge_detail(row, parse_detail_page(html))
+    pending = [row for row in plan.detail_listings if row["url"]]
+
+    for attempt in range(MAX_DETAIL_BATCH_ATTEMPTS):
+        if not pending:
+            break
+        detail_map = dict(
+            bulk_fetch(
+                [str(row["url"]) for row in pending],
+                max_workers=DETAIL_FETCH_WORKERS,
+            )
+        )
+        retry: list[Listing] = []
+
+        for row in pending:
+            html = detail_map.get(str(row["url"]), "")
+            detail = parse_detail_page(html)
+            if not _has_structured_detail(detail) or not merge_detail(row, detail):
+                retry.append(row)
+
+        pending = retry
+        if pending and attempt + 1 < MAX_DETAIL_BATCH_ATTEMPTS:
+            logger.warning(
+                "Panorama retrying %d unstructured detail page(s) (%d/%d)",
+                len(pending),
+                attempt + 1,
+                MAX_DETAIL_BATCH_ATTEMPTS,
+            )
+
+    if pending:
+        ids = ", ".join(str(row["id"]) for row in pending)
+        raise DetailEnrichmentError(
+            "Panorama detail enrichment failed after "
+            f"{MAX_DETAIL_BATCH_ATTEMPTS} batch attempt(s): {ids}"
+        )
+
     for row in listings:
         warnings = validate(row)
         if verbose:

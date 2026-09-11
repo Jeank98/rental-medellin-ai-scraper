@@ -54,7 +54,7 @@ def fetch_page(url: str, method: str = "get") -> Optional[str]:
             resp = fetcher.get(url, timeout=_TIMEOUT, retries=1)
 
             if resp.status >= 400:
-                if resp.status < 500:
+                if resp.status < 500 and resp.status != 429:
                     logger.warning("HTTP %s for %s — not retrying (client error)", resp.status, url)
                     return None
                 logger.warning(
@@ -151,11 +151,15 @@ def _fetch_single(url: str) -> Tuple[str, str]:
     return (url, result if result is not None else "")
 
 
-def bulk_fetch(urls: List[str]) -> List[Tuple[str, str]]:
+def bulk_fetch(
+    urls: List[str],
+    max_workers: int | None = None,
+) -> List[Tuple[str, str]]:
     """Fetch multiple URLs concurrently using a thread pool.
 
     Args:
         urls: List of URLs to fetch.
+        max_workers: Maximum concurrent requests. Defaults to the shared limit.
 
     Returns:
         List of (url, html_content) tuples — same length as input.
@@ -165,13 +169,17 @@ def bulk_fetch(urls: List[str]) -> List[Tuple[str, str]]:
     if not urls:
         return []
 
+    worker_limit = _MAX_BULK_WORKERS if max_workers is None else max_workers
+    if worker_limit < 1:
+        raise ValueError("max_workers must be at least 1")
+
     total = len(urls)
     results: List[Tuple[str, str]] = []
 
     # Process in chunks of _BULK_CHUNK_SIZE for memory efficiency
     for chunk_start in range(0, total, _BULK_CHUNK_SIZE):
         chunk = urls[chunk_start : chunk_start + _BULK_CHUNK_SIZE]
-        workers = min(_MAX_BULK_WORKERS, len(chunk))
+        workers = min(worker_limit, len(chunk))
         logger.info(
             "Bulk fetching %d URLs (chunk %d-%d/%d) with %d workers",
             len(chunk),

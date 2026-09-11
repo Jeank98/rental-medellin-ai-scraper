@@ -7,7 +7,9 @@ from urllib.parse import parse_qs, urlparse
 
 from scrape.panoramainmobiliario import (
     COLUMNS,
+    DETAIL_FETCH_WORKERS,
     RESIDENTIAL_TYPES,
+    DetailEnrichmentError,
     _phase_a,
     _phase_b,
     build_page_url,
@@ -259,6 +261,108 @@ class TestTwoPhaseScrape(unittest.TestCase):
         self.assertEqual(by_id["PAN-1"]["barrio"], "Laureles")
         self.assertEqual(by_id["PAN-2"]["area"], 60)
         self.assertEqual(by_id["PAN-2"]["estrato"], 5)
+
+    def test_phase_b_refetches_blank_cached_barrio(self):
+        listing = {
+            "id": "PAN-1",
+            "portal": "panoramainmobiliario",
+            "tipo": "apartaestudio",
+            "precio": 1_500_000,
+            "area": 40,
+            "habitaciones": 1,
+            "banos": 1,
+            "parqueaderos": 0,
+            "estrato": 0,
+            "barrio": "",
+            "url": "https://example.test/PAN-1",
+        }
+        previous = {**listing}
+
+        with (
+            mock.patch(
+                "db.get_active_listings_by_id", return_value={"PAN-1": previous}
+            ),
+            mock.patch(
+                "scrape.panoramainmobiliario.bulk_fetch",
+                return_value=[(listing["url"], _load("detail_apartaestudio.html"))],
+            ) as detail_fetch,
+        ):
+            rows = _phase_b(
+                [listing],
+                "medellin",
+                verbose=False,
+                reuse_unchanged_details=True,
+            )
+
+        detail_fetch.assert_called_once_with(
+            [listing["url"]], max_workers=DETAIL_FETCH_WORKERS
+        )
+        self.assertEqual(rows[0]["barrio"], "Aliadas")
+
+    def test_phase_b_retries_empty_detail_response(self):
+        listing = {
+            "id": "PAN-1",
+            "portal": "panoramainmobiliario",
+            "tipo": "apartaestudio",
+            "precio": 1_500_000,
+            "area": 40,
+            "habitaciones": 1,
+            "banos": 1,
+            "parqueaderos": 0,
+            "estrato": 0,
+            "barrio": "",
+            "url": "https://example.test/PAN-1",
+        }
+
+        with mock.patch(
+            "scrape.panoramainmobiliario.bulk_fetch",
+            side_effect=[
+                [(listing["url"], "")],
+                [(listing["url"], _load("detail_apartaestudio.html"))],
+            ],
+        ) as detail_fetch:
+            rows = _phase_b(
+                [listing],
+                "medellin",
+                verbose=False,
+                reuse_unchanged_details=False,
+            )
+
+        self.assertEqual(detail_fetch.call_count, 2)
+        self.assertEqual(
+            detail_fetch.call_args_list,
+            [
+                mock.call([listing["url"]], max_workers=DETAIL_FETCH_WORKERS),
+                mock.call([listing["url"]], max_workers=DETAIL_FETCH_WORKERS),
+            ],
+        )
+        self.assertEqual(rows[0]["barrio"], "Aliadas")
+
+    def test_phase_b_rejects_completely_unenriched_batch(self):
+        listing = {
+            "id": "PAN-1",
+            "portal": "panoramainmobiliario",
+            "tipo": "apartaestudio",
+            "precio": 1_500_000,
+            "area": 40,
+            "habitaciones": 1,
+            "banos": 1,
+            "parqueaderos": 0,
+            "estrato": 0,
+            "barrio": "",
+            "url": "https://example.test/PAN-1",
+        }
+
+        with mock.patch(
+            "scrape.panoramainmobiliario.bulk_fetch",
+            return_value=[(listing["url"], "")],
+        ), self.assertRaises(DetailEnrichmentError):
+            _phase_b(
+                [listing],
+                "medellin",
+                verbose=False,
+                reuse_unchanged_details=False,
+            )
 
 if __name__ == "__main__":
     unittest.main()
