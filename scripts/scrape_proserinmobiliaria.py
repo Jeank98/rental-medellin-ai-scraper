@@ -12,8 +12,16 @@ from scrape.proserinmobiliaria import scrape
 
 def main(args: argparse.Namespace | None = None) -> int:
     """Run the Proser scraper through the shared CLI."""
+    parser = create_parser(
+        "proserinmobiliaria",
+        "Scrape Proser Medellín rental listings",
+    )
+    parser.add_argument(
+        "--reuse-unchanged-details",
+        action="store_true",
+        help="Reuse verified active detail fields when the listing price is unchanged",
+    )
     if args is None:
-        parser = create_parser("proserinmobiliaria", "Scrape Proser Medellín rental listings")
         args = parser.parse_args()
     return run_scraper(
         scraper_fn=lambda: scrape(
@@ -21,6 +29,7 @@ def main(args: argparse.Namespace | None = None) -> int:
             sample_only=args.sample_only,
             max_pages=args.max_pages,
             verbose=args.verbose,
+            reuse_unchanged_details=getattr(args, "reuse_unchanged_details", False),
         ),
         portal=args.portal,
         args=args,

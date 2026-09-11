@@ -48,10 +48,13 @@ price match the active row for that portal and city:
 | `scripts/scrape_lapalma.py --reuse-unchanged-details` | La Palma | `estrato`, `barrio` |
 | `scripts/scrape_alnago.py --reuse-unchanged-details` | Alnago | `tipo`, `area`, `parqueaderos`, `estrato` |
 | `scripts/scrape_monserrate.py --reuse-unchanged-details` | Arrendamientos Monserrate | `id`, `tipo`, `area`, `habitaciones`, `banos`, `parqueaderos`, `estrato`, `barrio` |
+| `scripts/scrape_proserinmobiliaria.py --reuse-unchanged-details` | Proser Inmobiliaria | `tipo`, `area`, `habitaciones`, `banos`, `parqueaderos`, `estrato`, `barrio` |
 
 Changed, new, zero-price, or unavailable prior rows use the normal detail-fetch
-path. The flag never changes the atomic DB replacement contract, and a
-database-read failure logs a warning before performing a complete detail scrape.
+path. Proser also requires a prior detail-only `estrato` in the `1`–`6` range
+before reuse; its row otherwise follows the normal detail-fetch path.
+The flag never changes the atomic DB replacement contract, and a database-read
+failure logs a warning before performing a complete detail scrape.
 Use `--sample-only` first: it reads the prior snapshot but writes no CSV,
 database, or Sheets output.
 
