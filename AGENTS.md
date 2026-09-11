@@ -19,6 +19,23 @@ The runtime check imports Scrapling, its `curl_cffi` transport, DB, HTML, browse
 and Google Sheets dependencies, plus the shared `scrape` package import chain,
 without reading `.env` or contacting a service. Agents MUST run it before health checks.
 
+## Repository GitHub identity
+
+This is a personal `Jeank98` repository. Its local Git identity is
+`Jeank98 <jeanpalencia14@gmail.com>` and its `github.com-personal` remote uses
+the personal SSH key. Agents MUST NOT change global Git or GitHub CLI settings.
+
+- Commit normally: the repository-local Git identity overrides the work default.
+- For every GitHub CLI/API action — PRs, issues, releases, checks, or `gh api`
+  — MUST run `scripts/gh-personal …`, never bare `gh …`.
+- `scripts/gh-personal` isolates `GH_CONFIG_DIR` to the personal account and
+  refuses to run unless it authenticates as `Jeank98`; it also clears token
+  environment variables so a work token cannot override that selection.
+- If the wrapper asks for authentication, stop and ask the user to run:
+  `scripts/gh-personal auth login --hostname github.com --git-protocol ssh --web`.
+- NEVER run `gh auth switch`, `gh auth login`, or `gh auth logout` directly
+  from this repository.
+
 ## What every agent working with this project must know
 
 ### Project purpose
