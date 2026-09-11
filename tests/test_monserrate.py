@@ -9,7 +9,6 @@ from scrape.arrendamientosmonserrate import (
     scrape,
 )
 
-
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "monserrate"
 
 
@@ -128,3 +127,42 @@ def test_duplicate_detail_codes_receive_unique_ids() -> None:
     assert len({row["id"] for row in rows}) == 2
     assert rows[0]["id"] == "MNS-A62"
     assert rows[1]["id"].startswith("MNS-A62-")
+
+
+def test_reuses_unchanged_detail_fields_by_stable_url() -> None:
+    listing_page = """
+    <ul>
+      <li class="product type-product">
+        <a href="/propiedad/uno/"><h2 class="woocommerce-loop-product__title">Local en Uno</h2></a>
+        <span class="price">$1.000.000</span>
+      </li>
+    </ul>
+    """
+    url = "https://www.arrendamientosmonserrate.com/propiedad/uno/"
+    previous = {
+        "MNS-A62": {
+            **_row(url),
+            "id": "MNS-A62",
+            "precio": 1_000_000,
+            "tipo": "bodega",
+            "area": 120,
+            "habitaciones": 1,
+            "banos": 2,
+            "parqueaderos": 1,
+            "estrato": 4,
+            "barrio": "Centro",
+        }
+    }
+
+    with (
+        mock.patch(
+            "scrape.arrendamientosmonserrate.fetch_page",
+            return_value=listing_page,
+        ),
+        mock.patch("db.get_active_listings_by_id", return_value=previous),
+        mock.patch("scrape.arrendamientosmonserrate.bulk_fetch") as detail_fetch,
+    ):
+        rows = scrape(max_pages=1, reuse_unchanged_details=True)
+
+    detail_fetch.assert_not_called()
+    assert rows == [previous["MNS-A62"]]

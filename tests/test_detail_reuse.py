@@ -3,7 +3,7 @@
 from unittest import mock
 
 from db import ACTIVE_LISTINGS_BY_ID_SQL, get_active_listings_by_id
-from scrape.detail_reuse import plan_detail_reuse
+from scrape.detail_reuse import plan_detail_reuse, plan_detail_reuse_by_url
 
 
 def _listing(listing_id: str, price: int, *, url: str | None = None) -> dict:
@@ -66,6 +66,55 @@ def test_reuses_genuine_zero_detail_values() -> None:
     assert listing["estrato"] == 0
     assert plan.reused_count == 1
     assert plan.detail_fetch_count == 0
+
+
+def test_reuses_declared_fields_by_unambiguous_normalized_url() -> None:
+    listing = _listing(
+        "",
+        1_500_000,
+        url="https://example.test/propiedad/uno/",
+    )
+    previous = {
+        "MNS-A62": {
+            **_listing("MNS-A62", 1_500_000, url="https://example.test/propiedad/uno"),
+            "tipo": "bodega",
+            "estrato": 4,
+        }
+    }
+
+    plan = plan_detail_reuse_by_url(
+        [listing],
+        previous,
+        ("id", "tipo", "estrato"),
+    )
+
+    assert listing["id"] == "MNS-A62"
+    assert listing["tipo"] == "bodega"
+    assert listing["estrato"] == 4
+    assert plan.reused_count == 1
+    assert plan.detail_fetch_count == 0
+
+
+def test_does_not_reuse_ambiguous_prior_urls() -> None:
+    listing = _listing("", 1_500_000, url="https://example.test/propiedad/uno/")
+    previous = {
+        "MNS-A62": _listing(
+            "MNS-A62",
+            1_500_000,
+            url="https://example.test/propiedad/uno",
+        ),
+        "MNS-A63": _listing(
+            "MNS-A63",
+            1_500_000,
+            url="https://example.test/propiedad/uno/",
+        ),
+    }
+
+    plan = plan_detail_reuse_by_url([listing], previous, ("id", "tipo"))
+
+    assert listing["id"] == ""
+    assert plan.reused_count == 0
+    assert plan.detail_listings == [listing]
 
 
 

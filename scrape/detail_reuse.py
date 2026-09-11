@@ -1,7 +1,7 @@
 """Plan Phase-B enrichment reuse from a prior active listing snapshot."""
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from psycopg2 import Error as DatabaseError
@@ -53,29 +53,81 @@ def plan_active_detail_reuse(
     )
 
 
+def plan_active_detail_reuse_by_url(
+    listings: list[dict],
+    portal: str,
+    ciudad: str,
+    detail_fields: tuple[str, ...],
+    preserve_current_fields: frozenset[str] = frozenset(),
+) -> DetailReusePlan:
+    """Plan reuse from the active snapshot by unambiguous stable URL + price."""
+    try:
+        from db import get_active_listings_by_id
+
+        previous_by_id = get_active_listings_by_id(portal, ciudad)
+    except (DatabaseError, OSError, RuntimeError) as error:
+        logging.getLogger(__name__).warning(
+            "%s detail reuse unavailable; fetching all detail pages: %s",
+            portal,
+            error,
+        )
+        return full_detail_plan(listings)
+
+    return plan_detail_reuse_by_url(
+        listings,
+        previous_by_id,
+        detail_fields,
+        preserve_current_fields,
+    )
+
+
 def plan_detail_reuse(
     listings: list[dict],
     previous_by_id: Mapping[str, Mapping[str, object]],
     detail_fields: tuple[str, ...],
     preserve_current_fields: frozenset[str] = frozenset(),
 ) -> DetailReusePlan:
-    """Reuse declared Phase-B fields when stable IDs have identical prices.
+    """Reuse declared Phase-B fields when stable IDs have identical prices."""
+    return _plan_detail_reuse(
+        listings,
+        previous_by_id,
+        detail_fields,
+        preserve_current_fields,
+        _stable_id,
+    )
 
-    The caller owns ``listings``. Matching rows are updated in place so their
-    fresh Phase-A fields remain authoritative. ``preserve_current_fields``
-    mirrors Phase-B merge functions that fill only zero or empty values. A
-    non-positive or non-integer price never matches: it must go through the
-    existing detail-fetch path.
-    """
+
+def plan_detail_reuse_by_url(
+    listings: list[dict],
+    previous_by_id: Mapping[str, Mapping[str, object]],
+    detail_fields: tuple[str, ...],
+    preserve_current_fields: frozenset[str] = frozenset(),
+) -> DetailReusePlan:
+    """Reuse declared Phase-B fields when one prior row has the same URL + price."""
+    return _plan_detail_reuse(
+        listings,
+        _unique_rows_by_url(previous_by_id),
+        detail_fields,
+        preserve_current_fields,
+        _stable_url,
+    )
+
+
+def _plan_detail_reuse(
+    listings: list[dict],
+    previous_by_key: Mapping[str, Mapping[str, object]],
+    detail_fields: tuple[str, ...],
+    preserve_current_fields: frozenset[str],
+    key_for: Callable[[Mapping[str, object]], str | None],
+) -> DetailReusePlan:
+    """Copy declared fields for rows whose stable key and positive price match."""
     detail_listings: list[dict] = []
     reused_count = 0
 
     for listing in listings:
-        listing_id = listing.get("id")
+        key = key_for(listing)
         current_price = _positive_integer_price(listing.get("precio"))
-        previous = (
-            previous_by_id.get(listing_id) if isinstance(listing_id, str) else None
-        )
+        previous = previous_by_key.get(key) if key else None
         previous_price = (
             _positive_integer_price(previous.get("precio")) if previous else None
         )
@@ -100,6 +152,37 @@ def plan_detail_reuse(
         reused_count=reused_count,
         detail_fetch_count=sum(bool(row.get("url")) for row in detail_listings),
     )
+
+
+def _stable_id(row: Mapping[str, object]) -> str | None:
+    value = row.get("id")
+    return value if isinstance(value, str) and value else None
+
+
+def _stable_url(row: Mapping[str, object]) -> str | None:
+    value = row.get("url")
+    if not isinstance(value, str):
+        return None
+    return value.rstrip("/") or None
+
+
+def _unique_rows_by_url(
+    previous_by_id: Mapping[str, Mapping[str, object]],
+) -> dict[str, Mapping[str, object]]:
+    rows_by_url: dict[str, Mapping[str, object]] = {}
+    ambiguous_urls: set[str] = set()
+
+    for row in previous_by_id.values():
+        url = _stable_url(row)
+        if url is None or url in ambiguous_urls:
+            continue
+        if url in rows_by_url:
+            rows_by_url.pop(url)
+            ambiguous_urls.add(url)
+            continue
+        rows_by_url[url] = row
+
+    return rows_by_url
 
 
 def _is_missing_detail_field(value: object) -> bool:

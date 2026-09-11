@@ -12,13 +12,18 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
-from scrape.fetcher import fetch_page, bulk_fetch
+from scrape.detail_reuse import (
+    DetailReusePlan,
+    full_detail_plan,
+    plan_active_detail_reuse_by_url,
+)
+from scrape.fetcher import bulk_fetch, fetch_page
 from scrape.normalize import (
-    normalize_price,
-    normalize_tipo,
+    normalize_barrio,
     normalize_estrato,
     normalize_garaje,
-    normalize_barrio,
+    normalize_price,
+    normalize_tipo,
 )
 from scrape.validator import validate
 
@@ -30,6 +35,18 @@ if not logger.handlers:
 _BASE = "https://www.arrendamientosmonserrate.com"
 _LISTING_PAGES = 5
 _LISTING_URL = "/inmuebles/page/{page}/?swoof=1&product_cat=arrendamiento"
+_PORTAL = "arrendamientosmonserrate"
+_DETAIL_FIELDS = (
+    "id",
+    "tipo",
+    "area",
+    "habitaciones",
+    "banos",
+    "parqueaderos",
+    "estrato",
+    "barrio",
+)
+
 
 _NUMBER_TOKEN_RE = re.compile(r"(?<!\d)\d+(?:[.,]\d+)*(?!\d)")
 
@@ -245,11 +262,34 @@ def _merge_detail(listing: dict, detail: dict) -> None:
     if detail.get("barrio"):
         listing["barrio"] = normalize_barrio(detail["barrio"])
 
+def _plan_phase_b(
+    listings: list[dict],
+    ciudad: str,
+    reuse_unchanged_details: bool,
+) -> DetailReusePlan:
+    if not reuse_unchanged_details:
+        return full_detail_plan(listings)
+
+    plan = plan_active_detail_reuse_by_url(
+        listings,
+        _PORTAL,
+        ciudad,
+        _DETAIL_FIELDS,
+    )
+    logger.info(
+        "MNS detail reuse: %d reused; %d detail pages fetched",
+        plan.reused_count,
+        plan.detail_fetch_count,
+    )
+    return plan
+
+
 def scrape(
     ciudad="medellin",
     sample_only=False,
     max_pages=None,
     verbose=False,
+    reuse_unchanged_details=False,
 ) -> list[dict]:
     """Scrape Arrendamientos Monserrate listings — two-phase.
 
@@ -306,21 +346,21 @@ def scrape(
         return listings
 
     # ── Phase B: Fetch detail pages ─────────────────────────────────────
-    detail_urls = [l["url"] for l in listings]
+    plan = _plan_phase_b(listings, ciudad, reuse_unchanged_details)
+    detail_urls = [listing["url"] for listing in plan.detail_listings]
 
     if verbose:
         logger.info("MNS Phase B: fetching %d detail pages...", len(detail_urls))
 
-    bulk_results = bulk_fetch(detail_urls)
-
-    for url, html in bulk_results:
-        if not html:
-            continue
-        detail = _parse_detail_page(html)
-        for listing in listings:
-            if listing["url"] == url:
-                _merge_detail(listing, detail)
-                break
+    detail_by_url = (
+        {url: html for url, html in bulk_fetch(detail_urls) if html}
+        if detail_urls
+        else {}
+    )
+    for listing in plan.detail_listings:
+        detail_html = detail_by_url.get(listing["url"], "")
+        if detail_html:
+            _merge_detail(listing, _parse_detail_page(detail_html))
 
     _ensure_unique_ids(listings)
     for listing in listings:
