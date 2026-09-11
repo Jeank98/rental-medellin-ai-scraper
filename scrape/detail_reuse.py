@@ -30,6 +30,7 @@ def plan_active_detail_reuse(
     portal: str,
     ciudad: str,
     detail_fields: tuple[str, ...],
+    preserve_current_fields: frozenset[str] = frozenset(),
 ) -> DetailReusePlan:
     """Plan reuse from the active DB snapshot or preserve full-detail fallback."""
     try:
@@ -44,19 +45,27 @@ def plan_active_detail_reuse(
         )
         return full_detail_plan(listings)
 
-    return plan_detail_reuse(listings, previous_by_id, detail_fields)
+    return plan_detail_reuse(
+        listings,
+        previous_by_id,
+        detail_fields,
+        preserve_current_fields,
+    )
 
 
 def plan_detail_reuse(
     listings: list[dict],
     previous_by_id: Mapping[str, Mapping[str, object]],
     detail_fields: tuple[str, ...],
+    preserve_current_fields: frozenset[str] = frozenset(),
 ) -> DetailReusePlan:
     """Reuse declared Phase-B fields when stable IDs have identical prices.
 
     The caller owns ``listings``. Matching rows are updated in place so their
-    fresh Phase-A fields remain authoritative. A non-positive or non-integer
-    price never matches: it must go through the existing detail-fetch path.
+    fresh Phase-A fields remain authoritative. ``preserve_current_fields``
+    mirrors Phase-B merge functions that fill only zero or empty values. A
+    non-positive or non-integer price never matches: it must go through the
+    existing detail-fetch path.
     """
     detail_listings: list[dict] = []
     reused_count = 0
@@ -76,6 +85,11 @@ def plan_detail_reuse(
             continue
 
         for field in detail_fields:
+            if (
+                field in preserve_current_fields
+                and not _is_missing_detail_field(listing.get(field))
+            ):
+                continue
             value = previous.get(field)
             if value is not None:
                 listing[field] = value
@@ -86,6 +100,11 @@ def plan_detail_reuse(
         reused_count=reused_count,
         detail_fetch_count=sum(bool(row.get("url")) for row in detail_listings),
     )
+
+
+def _is_missing_detail_field(value: object) -> bool:
+    """Match Phase-B's zero-or-empty convention for optional fields."""
+    return value is None or value == "" or value == 0
 
 
 def _positive_integer_price(value: object) -> int | None:

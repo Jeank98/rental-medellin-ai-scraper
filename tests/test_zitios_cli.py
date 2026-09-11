@@ -54,3 +54,32 @@ def test_sample_only_uses_fixture_scraper_without_writers() -> None:
     csv_writer.assert_not_called()
     db_writer.assert_not_called()
     assert "Sample: 2 listing(s) extracted" in output.getvalue()
+
+
+def test_cli_forwards_reuse_flag() -> None:
+    args = argparse.Namespace(
+        portal="zitios",
+        output="both",
+        ciudad="medellin",
+        sample_only=True,
+        max_pages=1,
+        verbose=False,
+        reuse_unchanged_details=True,
+    )
+
+    with (
+        mock.patch("scripts.scrape_zitios.scrape", return_value=[]) as scrape_mock,
+        mock.patch(
+            "scripts.scrape_zitios.run_scraper",
+            side_effect=lambda scraper_fn, **_kwargs: (scraper_fn(), 0)[1],
+        ),
+    ):
+        assert scripts.scrape_zitios.main(args=args) == 0
+
+    scrape_mock.assert_called_once_with(
+        ciudad="medellin",
+        sample_only=True,
+        max_pages=1,
+        verbose=False,
+        reuse_unchanged_details=True,
+    )
