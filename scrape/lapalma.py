@@ -6,6 +6,11 @@ from urllib.parse import urlencode, urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
+from scrape.detail_reuse import (
+    DetailReusePlan,
+    full_detail_plan,
+    plan_active_detail_reuse,
+)
 from scrape.fetcher import bulk_fetch, fetch_page
 from scrape.normalize import normalize_barrio, normalize_price, normalize_tipo
 from scrape.validator import validate
@@ -23,6 +28,8 @@ _TYPE_WORDS = ("APARTAESTUDIO", "APARTAMENTO", "BODEGA", "OFICINA", "LOCAL", "CA
 _UNAVAILABLE_WORDS = ("ALQUILADO", "ARRENDADO")
 Listing = TypedDict("Listing", {"id": str, "portal": str, "tipo": str, "precio": int, "area": int, "habitaciones": int, "banos": int, "parqueaderos": int, "estrato": int, "barrio": str, "url": str})
 DetailFields = TypedDict("DetailFields", {"estrato": int, "barrio": str})
+
+_DETAIL_FIELDS = ("estrato", "barrio")
 class UnsupportedCityError(KeyError): pass
 
 
@@ -264,15 +271,41 @@ def _phase_a(ciudad: str, max_pages: int | None, verbose: bool) -> list[Listing]
     return listings
 
 
-def _phase_b(listings: list[Listing], verbose: bool) -> list[Listing]:
-    """Fetch details and merge only estrato and explicit barrio."""
-    listings = [row for row in listings if row["tipo"] in RESIDENTIAL_TYPES]
-    urls = [row["url"] for row in listings if row["url"]]
+def _plan_phase_b(
+    listings: list[Listing],
+    ciudad: str,
+    reuse_unchanged_details: bool,
+) -> DetailReusePlan:
+    """Reuse La Palma's detail-only fields for price-stable active rows."""
+    if not reuse_unchanged_details:
+        return full_detail_plan(listings)
+
+    plan = plan_active_detail_reuse(listings, _PORTAL, ciudad, _DETAIL_FIELDS)
+    logger.info(
+        "LPI detail reuse: %d reused, %d detail pages to fetch",
+        plan.reused_count,
+        plan.detail_fetch_count,
+    )
+    print(
+        "LPI detail reuse: "
+        f"{plan.reused_count} reused; {plan.detail_fetch_count} detail pages fetched"
+    )
+    return plan
+
+
+def _phase_b(
+    detail_listings: list[Listing],
+    listings: list[Listing],
+    verbose: bool,
+) -> list[Listing]:
+    """Fetch outstanding details and validate all current residential rows."""
+    urls = [row["url"] for row in detail_listings if row["url"]]
     detail_map = dict(bulk_fetch(urls))
-    for row in listings:
+    for row in detail_listings:
         html = detail_map.get(row["url"], "")
         if html:
             row.update(parse_detail_page(html))
+    for row in listings:
         warnings = validate(row)
         if verbose:
             for warning in warnings:
@@ -285,11 +318,17 @@ def scrape(
     sample_only: bool = False,
     max_pages: int | None = None,
     verbose: bool = False,
+    reuse_unchanged_details: bool = False,
 ) -> list[Listing]:
     """Scrape La Palma's Medellin rental inventory using two phases."""
     if sample_only and max_pages is None:
         max_pages = 3
-    listings = _phase_a(ciudad, max_pages, verbose)
+    listings = [
+        row
+        for row in _phase_a(ciudad, max_pages, verbose)
+        if row["tipo"] in RESIDENTIAL_TYPES
+    ]
     if not listings:
         return []
-    return _phase_b(listings, verbose)
+    plan = _plan_phase_b(listings, ciudad, reuse_unchanged_details)
+    return _phase_b(plan.detail_listings, listings, verbose)

@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
+from scrape.detail_reuse import plan_active_detail_reuse
 from scrape.lapalma import (
     RESIDENTIAL_TYPES,
     build_page_url,
@@ -194,6 +195,49 @@ class TestTwoPhasePagination(unittest.TestCase):
         self.assertEqual([row["id"] for row in rows], ["LPI-10255187"])
         self.assertEqual(bulk_mock.call_args.args[0], [residential["url"]])
 
+
+    def test_reuses_unchanged_details_after_residential_guard(self):
+        reused, changed = parse_search_page(_load("search_page.html"))
+        commercial = {
+            **reused,
+            "id": "LPI-10075954",
+            "tipo": "local",
+            "url": "https://lapalmainmobiliaria.com.co/local/10075954",
+        }
+        previous = {
+            reused["id"]: {**reused, "estrato": 6, "barrio": "Anterior"},
+            changed["id"]: {**changed, "precio": changed["precio"] - 1},
+        }
+
+        with (
+            mock.patch(
+                "scrape.lapalma._phase_a",
+                return_value=[reused, changed, commercial],
+            ),
+            mock.patch(
+                "scrape.lapalma.plan_active_detail_reuse",
+                wraps=plan_active_detail_reuse,
+            ) as planner,
+            mock.patch(
+                "db.get_active_listings_by_id", return_value=previous
+            ) as snapshot,
+            mock.patch(
+                "scrape.lapalma.bulk_fetch",
+                return_value=[(changed["url"], _load("detail_villa_hermosa.html"))],
+            ) as detail_fetch,
+        ):
+            rows = scrape(reuse_unchanged_details=True)
+
+        snapshot.assert_called_once_with("lapalmainmobiliaria", "medellin")
+        self.assertEqual(
+            [row["id"] for row in planner.call_args.args[0]],
+            [reused["id"], changed["id"]],
+        )
+        detail_fetch.assert_called_once_with([changed["url"]])
+        by_id = {row["id"]: row for row in rows}
+        self.assertEqual(by_id[reused["id"]]["estrato"], 6)
+        self.assertEqual(by_id[reused["id"]]["barrio"], "Anterior")
+        self.assertEqual(by_id[changed["id"]]["estrato"], 3)
     def test_page_url_uses_official_rental_endpoint(self):
         for property_type, property_id in {"apartamento": "2", "casa": "1", "apartaestudio": "14"}.items():
             url = build_page_url(4, property_type=property_type)

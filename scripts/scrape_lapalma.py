@@ -11,10 +11,15 @@ from scrape.lapalma import scrape
 
 def main(args=None):
     """Run the La Palma scraper through the shared CLI."""
+    parser = create_parser(
+        "lapalmainmobiliaria", "Scrape La Palma Inmobiliaria rental listings"
+    )
+    parser.add_argument(
+        "--reuse-unchanged-details",
+        action="store_true",
+        help="Reuse active DB detail fields for price-stable listings",
+    )
     if args is None:
-        parser = create_parser(
-            "lapalmainmobiliaria", "Scrape La Palma Inmobiliaria rental listings"
-        )
         args = parser.parse_args()
     return run_scraper(
         lambda: scrape(
@@ -22,6 +27,7 @@ def main(args=None):
             sample_only=args.sample_only,
             max_pages=args.max_pages,
             verbose=args.verbose,
+            reuse_unchanged_details=getattr(args, "reuse_unchanged_details", False),
         ),
         portal=args.portal,
         args=args,
