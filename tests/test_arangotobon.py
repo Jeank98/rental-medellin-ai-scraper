@@ -152,6 +152,50 @@ def test_scrape_deduplicates_stale_pages_fetches_details_and_merges() -> None:
     assert all(list(row) == COLUMNS for row in rows)
 
 
+
+
+def test_scrape_reuses_unchanged_detail_fields_and_fetches_only_price_misses(
+    capsys,
+) -> None:
+    search = _load("search_page.html")
+    reused, changed, *new_rows = parse_search_page(search)
+    detail_names = {
+        "3440": "detail_3440.html",
+        "4517": "detail_4517.html",
+        "4571": "detail_4571.html",
+        "4466": "detail_4466_parking.html",
+    }
+    details = {
+        row["url"]: _load(detail_names[row["id"].split("-", 1)[1]])
+        for row in [changed, *new_rows]
+    }
+    previous = {
+        reused["id"]: {
+            **reused,
+            "estrato": 6,
+            "barrio": "Anterior",
+            "parqueaderos": 2,
+        },
+        changed["id"]: {**changed, "precio": changed["precio"] - 1},
+    }
+
+    with (
+        mock.patch("scrape.arangotobon.fetch_page", return_value=search),
+        mock.patch(
+            "scrape.arangotobon.bulk_fetch",
+            return_value=list(details.items()),
+        ) as detail_fetch,
+        mock.patch("db.get_active_listings_by_id", return_value=previous) as snapshot,
+    ):
+        rows = scrape(max_pages=1, reuse_unchanged_details=True)
+
+    snapshot.assert_called_once_with("arangotobon", "medellin")
+    assert detail_fetch.call_args.args[0] == [row["url"] for row in [changed, *new_rows]]
+    assert "ATB detail reuse: 1 reused; 3 detail pages fetched" in capsys.readouterr().out
+    by_id = {row["id"]: row for row in rows}
+    assert by_id[reused["id"]]["estrato"] == 6
+    assert by_id[reused["id"]]["barrio"] == "Anterior"
+    assert by_id[reused["id"]]["parqueaderos"] == 2
 def test_scrape_keeps_card_defaults_when_detail_fails() -> None:
     with mock.patch(
         "scrape.arangotobon.fetch_page", return_value=_load("search_page.html")

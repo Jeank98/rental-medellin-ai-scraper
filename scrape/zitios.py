@@ -6,6 +6,11 @@ from urllib.parse import urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup, Tag
 
+from scrape.detail_reuse import (
+    DetailReusePlan,
+    full_detail_plan,
+    plan_active_detail_reuse,
+)
 from scrape.fetcher import bulk_fetch, fetch_page
 from scrape.normalize import (
     normalize_barrio,
@@ -26,6 +31,16 @@ _PREFIX = "ZIT"
 _TOTAL_PAGES = 4
 Listing = TypedDict("Listing", {"id": str, "portal": str, "tipo": str, "precio": int, "area": int, "habitaciones": int, "banos": int, "parqueaderos": int, "estrato": int, "barrio": str, "url": str})
 DetailFields = TypedDict("DetailFields", {"tipo": str, "precio": int, "area": int, "habitaciones": int, "banos": int, "parqueaderos": int | None, "estrato": int, "barrio": str})
+
+_DETAIL_FIELDS = (
+    "area",
+    "habitaciones",
+    "banos",
+    "parqueaderos",
+    "estrato",
+    "barrio",
+)
+_PRESERVE_CURRENT_FIELDS = frozenset(("barrio",))
 
 
 def _page_url(page: int, property_type: str | None = None) -> str:
@@ -270,11 +285,41 @@ def _merge_detail(row: Listing, detail: DetailFields) -> None:
         row["barrio"] = detail["barrio"]
 
 
+
+def _plan_phase_b(
+    rows: list[Listing],
+    ciudad: str,
+    reuse_unchanged_details: bool,
+) -> DetailReusePlan:
+    """Select Zitios enrichment requests only for cards missing detail fields."""
+    candidates = [row for row in rows if _needs_detail(row)]
+    if not reuse_unchanged_details:
+        return full_detail_plan(candidates)
+
+    plan = plan_active_detail_reuse(
+        candidates,
+        _PORTAL,
+        ciudad,
+        _DETAIL_FIELDS,
+        _PRESERVE_CURRENT_FIELDS,
+    )
+    logger.info(
+        "ZIT detail reuse: %d reused, %d detail pages to fetch",
+        plan.reused_count,
+        plan.detail_fetch_count,
+    )
+    print(
+        "ZIT detail reuse: "
+        f"{plan.reused_count} reused; {plan.detail_fetch_count} detail pages fetched"
+    )
+    return plan
+
 def scrape(
     ciudad: str = "medellin",
     sample_only: bool = False,
     max_pages: int | None = None,
     verbose: bool = False,
+    reuse_unchanged_details: bool = False,
 ) -> list[Listing]:
     """Scrape Zitios Medellín rentals through bounded pagination and details."""
     page_limit = (
@@ -308,9 +353,10 @@ def scrape(
     if not rows:
         return []
 
-    detail_urls = [row["url"] for row in rows if _needs_detail(row) and row["url"]]
+    plan = _plan_phase_b(rows, ciudad, reuse_unchanged_details)
+    detail_urls = [row["url"] for row in plan.detail_listings if row["url"]]
     details = {url: html for url, html in bulk_fetch(detail_urls) if html}
-    for row in rows:
+    for row in plan.detail_listings:
         html = details.get(row["url"], "")
         if html:
             _merge_detail(row, parse_detail_page(html))

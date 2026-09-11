@@ -19,8 +19,18 @@ from urllib.parse import urlencode, urljoin, urlparse, urlunparse
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
+from scrape.detail_reuse import (
+    DetailReusePlan,
+    full_detail_plan,
+    plan_active_detail_reuse,
+)
 from scrape.fetcher import bulk_fetch, fetch_page
-from scrape.normalize import normalize_barrio, normalize_estrato, normalize_price, normalize_tipo
+from scrape.normalize import (
+    normalize_barrio,
+    normalize_estrato,
+    normalize_price,
+    normalize_tipo,
+)
 from scrape.validator import validate
 
 logger = logging.getLogger(__name__)
@@ -32,6 +42,16 @@ CITY_IDS = {"medellin": "496"}
 RESIDENTIAL_TYPES = ("apartaestudio", "apartamento", "casa")
 TYPE_IDS = {"apartaestudio": "14", "apartamento": "2", "casa": "1"}
 PER_PAGE = 12
+
+_DETAIL_FIELDS = (
+    "area",
+    "habitaciones",
+    "banos",
+    "parqueaderos",
+    "estrato",
+    "barrio",
+)
+_PRESERVE_CURRENT_FIELDS = frozenset(_DETAIL_FIELDS)
 MAX_PAGE_ATTEMPTS = 2
 POSTGRES_INTEGER_MAX = 2_147_483_647
 
@@ -366,17 +386,49 @@ def _phase_a(ciudad: str, max_pages: int | None, verbose: bool) -> list[Listing]
     return list(by_id.values())
 
 
-def _phase_b(listings: list[Listing], verbose: bool) -> list[Listing]:
-    """Fetch detail pages and merge structured enrichment fields."""
-    detail_urls = [str(row["url"]) for row in listings if row["url"]]
-    if not detail_urls:
-        return listings
+def _plan_phase_b(
+    listings: list[Listing],
+    ciudad: str,
+    reuse_unchanged_details: bool,
+) -> DetailReusePlan:
+    """Reuse only values that Panorama's Phase B would otherwise fill."""
+    if not reuse_unchanged_details:
+        return full_detail_plan(listings)
 
-    detail_map = dict(bulk_fetch(detail_urls))
-    for row in listings:
+    plan = plan_active_detail_reuse(
+        listings,
+        PORTAL,
+        ciudad,
+        _DETAIL_FIELDS,
+        _PRESERVE_CURRENT_FIELDS,
+    )
+    logger.info(
+        "PAN detail reuse: %d reused, %d detail pages to fetch",
+        plan.reused_count,
+        plan.detail_fetch_count,
+    )
+    print(
+        "PAN detail reuse: "
+        f"{plan.reused_count} reused; {plan.detail_fetch_count} detail pages fetched"
+    )
+    return plan
+
+
+def _phase_b(
+    listings: list[Listing],
+    ciudad: str,
+    verbose: bool,
+    reuse_unchanged_details: bool,
+) -> list[Listing]:
+    """Fetch only detail pages that cannot safely use the active snapshot."""
+    plan = _plan_phase_b(listings, ciudad, reuse_unchanged_details)
+    detail_urls = [str(row["url"]) for row in plan.detail_listings if row["url"]]
+    detail_map = dict(bulk_fetch(detail_urls)) if detail_urls else {}
+    for row in plan.detail_listings:
         html = detail_map.get(str(row["url"]), "")
         if html:
             merge_detail(row, parse_detail_page(html))
+    for row in listings:
         warnings = validate(row)
         if verbose:
             for warning in warnings:
@@ -389,6 +441,7 @@ def scrape(
     sample_only: bool = False,
     max_pages: int | None = None,
     verbose: bool = False,
+    reuse_unchanged_details: bool = False,
 ) -> list[Listing]:
     """Scrape Panorama Medellín rentals using filtered two-phase HTML."""
     try:
@@ -401,4 +454,4 @@ def scrape(
     listings = _phase_a(ciudad, page_limit, verbose)
     if not listings:
         return []
-    return _phase_b(listings, verbose)
+    return _phase_b(listings, ciudad, verbose, reuse_unchanged_details)

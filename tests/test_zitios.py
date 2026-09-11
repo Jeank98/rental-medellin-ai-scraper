@@ -192,6 +192,51 @@ def test_scrape_deduplicates_ids_merges_details_and_keeps_exact_contract() -> No
     ]
 
 
+
+
+def test_scrape_reuses_unchanged_detail_candidates_without_replacing_card_barrio(
+    capsys,
+) -> None:
+    search_html = _load("search_page_1.html")
+    reused, changed = parse_search_page(search_html)
+    assert reused["barrio"]
+    previous = {
+        reused["id"]: {
+            **reused,
+            "area": 99,
+            "habitaciones": 4,
+            "banos": 3,
+            "parqueaderos": 2,
+            "estrato": 6,
+            "barrio": "Anterior",
+        },
+        changed["id"]: {**changed, "precio": changed["precio"] - 1},
+    }
+
+    search_urls = {
+        _page_url(1, property_type)
+        for property_type in ("apartamentos", "casas", "apartaestudios")
+    }
+    with (
+        mock.patch(
+            "scrape.zitios.fetch_page",
+            side_effect=lambda url: search_html if url in search_urls else "",
+        ),
+        mock.patch(
+            "scrape.zitios.bulk_fetch",
+            return_value=[(changed["url"], _load("detail_10125019.html"))],
+        ) as detail_fetch,
+        mock.patch("db.get_active_listings_by_id", return_value=previous) as snapshot,
+    ):
+        rows = scrape(max_pages=1, reuse_unchanged_details=True)
+
+    snapshot.assert_called_once_with("zitios", "medellin")
+    assert detail_fetch.call_args.args[0] == [changed["url"]]
+    assert "ZIT detail reuse: 1 reused; 1 detail pages fetched" in capsys.readouterr().out
+    by_id = {row["id"]: row for row in rows}
+    assert by_id[reused["id"]]["area"] == 99
+    assert by_id[reused["id"]]["estrato"] == 6
+    assert by_id[reused["id"]]["barrio"] == reused["barrio"]
 def test_scrape_never_sends_non_residential_cards_to_detail_fetch() -> None:
     search_url = _page_url(1, "apartamentos")
     detail_url = (

@@ -68,6 +68,31 @@ def test_reuses_genuine_zero_detail_values() -> None:
     assert plan.detail_fetch_count == 0
 
 
+
+
+def test_preserves_fresh_card_values_for_declared_missing_only_fields() -> None:
+    listing = _listing("PAN-1", 1_500_000)
+    previous = {
+        "PAN-1": {
+            **_listing("PAN-1", 1_500_000),
+            "area": 99,
+            "banos": 3,
+            "barrio": "Anterior",
+        }
+    }
+
+    plan = plan_detail_reuse(
+        [listing],
+        previous,
+        ("area", "banos", "barrio"),
+        frozenset(("area", "banos", "barrio")),
+    )
+
+    assert listing["area"] == 55
+    assert listing["banos"] == 3
+    assert listing["barrio"] == "Laureles"
+    assert plan.reused_count == 1
+    assert plan.detail_fetch_count == 0
 def test_malformed_price_never_matches_a_cached_row() -> None:
     listing = _listing("ASF-1", 1_500_000)
     listing["precio"] = "1500000"

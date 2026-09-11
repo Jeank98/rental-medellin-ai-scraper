@@ -12,8 +12,13 @@ from scrape.zitios import scrape
 
 def main(args: argparse.Namespace | None = None) -> int:
     """Run the Zitios scraper through the shared CLI dispatcher."""
+    parser = create_parser("zitios", "Scrape Zitios Inmobiliaria rental listings")
+    parser.add_argument(
+        "--reuse-unchanged-details",
+        action="store_true",
+        help="Reuse active DB detail fields for price-stable listings",
+    )
     if args is None:
-        parser = create_parser("zitios", "Scrape Zitios Inmobiliaria rental listings")
         args = parser.parse_args()
     return run_scraper(
         scraper_fn=lambda: scrape(
@@ -21,6 +26,7 @@ def main(args: argparse.Namespace | None = None) -> int:
             sample_only=args.sample_only,
             max_pages=args.max_pages,
             verbose=args.verbose,
+            reuse_unchanged_details=getattr(args, "reuse_unchanged_details", False),
         ),
         portal=args.portal,
         args=args,

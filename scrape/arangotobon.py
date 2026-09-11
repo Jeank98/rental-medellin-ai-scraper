@@ -8,6 +8,11 @@ from urllib.parse import urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup, Tag
 
+from scrape.detail_reuse import (
+    DetailReusePlan,
+    full_detail_plan,
+    plan_active_detail_reuse,
+)
 from scrape.fetcher import bulk_fetch, fetch_page
 from scrape.normalize import (
     normalize_barrio,
@@ -42,6 +47,8 @@ COLUMNS = [
     "url",
 ]
 RESIDENTIAL_TYPES = frozenset(("apartamento", "casa", "apartaestudio"))
+
+_DETAIL_FIELDS = ("estrato", "barrio", "parqueaderos")
 
 
 class UnsupportedCityError(KeyError):
@@ -320,11 +327,34 @@ def build_page_url(page: int, ciudad: str = "medellin") -> str:
     return SEARCH_URL if page <= 1 else f"{SEARCH_URL}{page}"
 
 
+def _plan_phase_b(
+    rows: list[Listing],
+    ciudad: str,
+    reuse_unchanged_details: bool,
+) -> DetailReusePlan:
+    """Reuse Arango Tobón detail-only fields from an unchanged active snapshot."""
+    if not reuse_unchanged_details:
+        return full_detail_plan(rows)
+
+    plan = plan_active_detail_reuse(rows, PORTAL, ciudad, _DETAIL_FIELDS)
+    logger.info(
+        "ATB detail reuse: %d reused, %d detail pages to fetch",
+        plan.reused_count,
+        plan.detail_fetch_count,
+    )
+    print(
+        "ATB detail reuse: "
+        f"{plan.reused_count} reused; {plan.detail_fetch_count} detail pages fetched"
+    )
+    return plan
+
+
 def scrape(
     ciudad: str = "medellin",
     sample_only: bool = False,
     max_pages: int | None = None,
     verbose: bool = False,
+    reuse_unchanged_details: bool = False,
 ) -> list[Listing]:
     """Scrape Arango Tobón's Medellín inventory through two HTML phases."""
     try:
@@ -356,13 +386,17 @@ def scrape(
     if not rows:
         return []
 
-    details = dict(bulk_fetch([row["url"] for row in rows if row["url"]]))
-    for row in rows:
+    plan = _plan_phase_b(rows, ciudad, reuse_unchanged_details)
+    details = dict(
+        bulk_fetch([row["url"] for row in plan.detail_listings if row["url"]])
+    )
+    for row in plan.detail_listings:
         html = details.get(row["url"], "")
         if html:
             merge_detail(row, parse_detail_page(html))
         else:
             logger.warning("No detail response for %s; keeping card defaults", row["id"])
+    for row in rows:
         warnings = validate(row)
         if verbose:
             for warning in warnings:

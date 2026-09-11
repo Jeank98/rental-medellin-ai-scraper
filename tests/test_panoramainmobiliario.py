@@ -9,6 +9,7 @@ from scrape.panoramainmobiliario import (
     COLUMNS,
     RESIDENTIAL_TYPES,
     _phase_a,
+    _phase_b,
     build_page_url,
     merge_detail,
     parse_detail_page,
@@ -182,6 +183,82 @@ class TestTwoPhaseScrape(unittest.TestCase):
         self.assertEqual(fetch_mock.call_count, 6)
         self.assertEqual(set(bulk_mock.call_args.args[0]), set(details))
 
+
+    def test_phase_b_reuses_only_missing_fields_for_unchanged_price(self):
+        reused = {
+            "id": "PAN-1",
+            "portal": "panoramainmobiliario",
+            "tipo": "apartamento",
+            "precio": 1_500_000,
+            "area": 50,
+            "habitaciones": 0,
+            "banos": 1,
+            "parqueaderos": 0,
+            "estrato": 0,
+            "barrio": "Laureles",
+            "url": "https://example.test/PAN-1",
+        }
+        changed = {
+            **reused,
+            "id": "PAN-2",
+            "precio": 1_600_000,
+            "area": 0,
+            "banos": 0,
+            "barrio": "",
+            "url": "https://example.test/PAN-2",
+        }
+        previous = {
+            "PAN-1": {
+                **reused,
+                "area": 99,
+                "habitaciones": 3,
+                "banos": 2,
+                "parqueaderos": 1,
+                "estrato": 4,
+                "barrio": "Anterior",
+            },
+            "PAN-2": {**changed, "precio": 1_500_000},
+        }
+        detail = {
+            "tipo": "apartamento",
+            "area": 60,
+            "habitaciones": 2,
+            "banos": 2,
+            "parqueaderos": 1,
+            "estrato": 5,
+            "barrio": "Nueva",
+        }
+
+        with (
+            mock.patch(
+                "db.get_active_listings_by_id", return_value=previous
+            ) as snapshot,
+            mock.patch(
+                "scrape.panoramainmobiliario.bulk_fetch",
+                return_value=[(changed["url"], "changed")],
+            ) as detail_fetch,
+            mock.patch(
+                "scrape.panoramainmobiliario.parse_detail_page",
+                return_value=detail,
+            ),
+        ):
+            rows = _phase_b(
+                [reused, changed],
+                "medellin",
+                verbose=False,
+                reuse_unchanged_details=True,
+            )
+
+        snapshot.assert_called_once_with("panoramainmobiliario", "medellin")
+        self.assertEqual(detail_fetch.call_args.args[0], [changed["url"]])
+        by_id = {row["id"]: row for row in rows}
+        self.assertEqual(by_id["PAN-1"]["area"], 50)
+        self.assertEqual(by_id["PAN-1"]["habitaciones"], 3)
+        self.assertEqual(by_id["PAN-1"]["banos"], 1)
+        self.assertEqual(by_id["PAN-1"]["estrato"], 4)
+        self.assertEqual(by_id["PAN-1"]["barrio"], "Laureles")
+        self.assertEqual(by_id["PAN-2"]["area"], 60)
+        self.assertEqual(by_id["PAN-2"]["estrato"], 5)
 
 if __name__ == "__main__":
     unittest.main()
