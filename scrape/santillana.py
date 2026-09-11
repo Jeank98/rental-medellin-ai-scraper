@@ -9,13 +9,18 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
-from scrape.fetcher import fetch_page, bulk_fetch
+from scrape.detail_reuse import (
+    DetailReusePlan,
+    full_detail_plan,
+    plan_active_detail_reuse,
+)
+from scrape.fetcher import bulk_fetch, fetch_page
 from scrape.normalize import (
-    normalize_price,
-    normalize_tipo,
+    normalize_barrio,
     normalize_estrato,
     normalize_garaje,
-    normalize_barrio,
+    normalize_price,
+    normalize_tipo,
     normalize_url,
 )
 from scrape.validator import validate
@@ -40,10 +45,27 @@ _SEARCH_URL = (
 )
 
 _COLUMNS = [
-    "id", "portal", "tipo", "precio", "area",
-    "habitaciones", "banos", "parqueaderos", "estrato",
-    "barrio", "url",
+    "id",
+    "portal",
+    "tipo",
+    "precio",
+    "area",
+    "habitaciones",
+    "banos",
+    "parqueaderos",
+    "estrato",
+    "barrio",
+    "url",
 ]
+
+_DETAIL_FIELDS = (
+    "area",
+    "habitaciones",
+    "banos",
+    "parqueaderos",
+    "estrato",
+    "barrio",
+)
 
 
 def _page_url(page: int) -> str:
@@ -74,7 +96,7 @@ def _parse_card(card) -> dict:
     for p in card.select(".body p"):
         text = p.get_text(strip=True)
         if text.startswith("Tipo:"):
-            listing["tipo"] = normalize_tipo(text[len("Tipo:"):].strip())
+            listing["tipo"] = normalize_tipo(text[len("Tipo:") :].strip())
             break
 
     price_span = card.select_one(".areaPrecio span")
@@ -169,7 +191,40 @@ def _fetch_all_pages(max_pages=None, verbose=False) -> list[dict]:
     return listings
 
 
-def scrape(ciudad="medellin", sample_only=False, max_pages=None, verbose=False) -> list[dict]:
+def _plan_phase_b(
+    listings: list[dict],
+    ciudad: str,
+    reuse_unchanged_details: bool,
+) -> DetailReusePlan:
+    """Select Santillana detail requests from the active snapshot."""
+    if not reuse_unchanged_details:
+        return full_detail_plan(listings)
+
+    plan = plan_active_detail_reuse(
+        listings,
+        "santillana",
+        ciudad,
+        _DETAIL_FIELDS,
+    )
+    logger.info(
+        "STL detail reuse: %d reused, %d detail pages to fetch",
+        plan.reused_count,
+        plan.detail_fetch_count,
+    )
+    print(
+        "STL detail reuse: "
+        f"{plan.reused_count} reused; {plan.detail_fetch_count} detail pages fetched"
+    )
+    return plan
+
+
+def scrape(
+    ciudad="medellin",
+    sample_only=False,
+    max_pages=None,
+    verbose=False,
+    reuse_unchanged_details: bool = False,
+) -> list[dict]:
     if sample_only and max_pages is None:
         max_pages = 3
 
@@ -183,31 +238,39 @@ def scrape(ciudad="medellin", sample_only=False, max_pages=None, verbose=False) 
     if verbose:
         logger.info("Phase A complete: %d listings", len(listings))
 
+    plan = _plan_phase_b(listings, ciudad, reuse_unchanged_details)
     if verbose:
-        logger.info("Phase B: fetching %d detail pages", len(listings))
+        logger.info(
+            "Phase B: fetching %d detail pages",
+            plan.detail_fetch_count,
+        )
 
-    detail_urls = [l["url"] for l in listings if l.get("url")]
+    detail_urls = [
+        listing["url"] for listing in plan.detail_listings if listing.get("url")
+    ]
     results = bulk_fetch(detail_urls)
     url_to_html = dict(results)
 
-    for listing in listings:
+    for listing in plan.detail_listings:
         url = listing.get("url", "")
         if url and url in url_to_html:
-            detail_fields = _parse_detail(url_to_html[url])
-            listing.update(detail_fields)
+            listing.update(_parse_detail(url_to_html[url]))
 
+    for listing in listings:
         warnings = validate(listing)
         if warnings:
             anomalies.extend(warnings)
             if verbose:
-                for w in warnings:
-                    print(f"  [ANOMALY] {listing['id']} — {w}")
+                for warning in warnings:
+                    print(f"  [ANOMALY] {listing['id']} — {warning}")
 
     if verbose:
         logger.info("Phase B complete: %d detail pages fetched", len(results))
 
     if anomalies:
-        print(f"\n{len(anomalies)} anomaly(s) detected across {len(listings)} listings.")
+        print(
+            f"\n{len(anomalies)} anomaly(s) detected across {len(listings)} listings."
+        )
 
     if sample_only:
         print(f"Sample: {len(listings)} listing(s) extracted")
