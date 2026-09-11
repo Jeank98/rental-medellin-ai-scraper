@@ -13,13 +13,18 @@ import logging
 
 from scrapling import Fetcher
 
+from scrape.detail_reuse import (
+    DetailReusePlan,
+    full_detail_plan,
+    plan_active_detail_reuse,
+)
 from scrape.fetcher import bulk_fetch
 from scrape.normalize import (
-    normalize_price,
-    normalize_tipo,
     normalize_barrio,
     normalize_estrato,
     normalize_garaje,
+    normalize_price,
+    normalize_tipo,
 )
 from scrape.validator import validate
 
@@ -31,6 +36,8 @@ logger = logging.getLogger(__name__)
 _HOMEPAGE_URL = "https://alnago.com"
 _DETAIL_BASE = "https://alnago.com/es/inmueble"
 _PORTAL = "alnago"
+
+_DETAIL_FIELDS = ("tipo", "area", "estrato", "parqueaderos")
 
 # Translation maps for detail page type extraction
 _TIPO_EN_TO_ES = {
@@ -99,10 +106,12 @@ def _extract_homepage_cards(resp) -> list[dict]:
             else _parse_article_text(text)
         )
 
+        if not _is_rental_offer(fields):
+            continue
+
         codigo = fields.get("codigo", code)
         if not codigo:
             codigo = code
-
         listing = {
             "id": f"ALN-{codigo}",
             "portal": _PORTAL,
@@ -117,8 +126,13 @@ def _extract_homepage_cards(resp) -> list[dict]:
             "url": f"{_DETAIL_BASE}/{codigo}",
         }
         cards.append(listing)
-
     return cards
+
+
+def _is_rental_offer(fields: dict[str, str]) -> bool:
+    """Require the explicit card offer marker before detail enrichment."""
+    return fields.get("finalidad", "").casefold() == "arriendo"
+
 
 
 def _parse_article_text(text: str) -> dict[str, str]:
@@ -159,9 +173,7 @@ def _parse_article_text(text: str) -> dict[str, str]:
     # Handle "Cod:" with trailing colon (value on same line sometimes)
     for j, line in enumerate(lines):
         lower = line.lower()
-        if lower.startswith("cod:") and len(line) > 4 and "codigo" not in fields:
-            fields["codigo"] = line[4:].strip()
-        elif lower.startswith("cod ") and len(line) > 4 and "codigo" not in fields:
+        if lower.startswith("cod:") and len(line) > 4 and "codigo" not in fields or lower.startswith("cod ") and len(line) > 4 and "codigo" not in fields:
             fields["codigo"] = line[4:].strip()
 
     return fields
@@ -180,6 +192,15 @@ def _parse_current_homepage_card_text(text: str) -> dict[str, str]:
     for line in lines:
         if line.startswith("$"):
             fields["precio"] = line
+            break
+
+    for line in lines:
+        lower = line.casefold()
+        if lower in ("rent", "arriendo"):
+            fields["finalidad"] = "arriendo"
+            break
+        if lower in ("sale", "venta"):
+            fields["finalidad"] = "venta"
             break
 
     title_index = -1
@@ -408,20 +429,39 @@ def _extract_m2(raw: str) -> int:
     return int(digits) if digits else 0
 
 
+def _plan_phase_b(
+    cards: list[dict],
+    ciudad: str,
+    reuse_unchanged_details: bool,
+) -> DetailReusePlan:
+    """Reuse Alnago detail fields for price-stable rental cards."""
+    if not reuse_unchanged_details:
+        return full_detail_plan(cards)
+
+    plan = plan_active_detail_reuse(cards, _PORTAL, ciudad, _DETAIL_FIELDS)
+    logger.info(
+        "ALN detail reuse: %d reused, %d detail pages to fetch",
+        plan.reused_count,
+        plan.detail_fetch_count,
+    )
+    print(
+        "ALN detail reuse: "
+        f"{plan.reused_count} reused; {plan.detail_fetch_count} detail pages fetched"
+    )
+    return plan
+
+
 # ---------------------------------------------------------------------------
 # Main scrape function
 # ---------------------------------------------------------------------------
 def scrape(
-    ciudad="medellin", sample_only=False, max_pages=None, verbose=False
+    ciudad: str = "medellin",
+    sample_only: bool = False,
+    max_pages: int | None = None,
+    verbose: bool = False,
+    reuse_unchanged_details: bool = False,
 ) -> list[dict]:
-    """Scrape Alnago rental listings using two-phase approach.
-
-    Phase A: Scrape homepage <article> cards for basic fields (7/11).
-    Phase B: Bulk fetch detail pages for tipo, area, estrato.
-    """
-    all_listings: list[dict] = []
-
-    # ---- Phase A: Homepage articles ----
+    """Scrape price-qualified Alnago rental cards with two-phase enrichment."""
     if verbose:
         logger.info("ALN: Phase A — fetching homepage")
 
@@ -439,56 +479,49 @@ def scrape(
             logger.info("ALN: sample-only — %d cards", len(cards))
 
     if not cards:
-        logger.warning("ALN: No <article> cards found on homepage")
+        logger.warning("ALN: No rental cards found on homepage")
         return []
 
     if verbose:
-        logger.info("ALN: Phase A — %d cards extracted", len(cards))
+        logger.info("ALN: Phase A — %d rental cards extracted", len(cards))
 
-    # ---- Phase B: Detail pages ----
-    detail_urls = [card["url"] for card in cards]
+    plan = _plan_phase_b(cards, ciudad, reuse_unchanged_details)
+    detail_urls = [card["url"] for card in plan.detail_listings]
     if verbose:
         logger.info("ALN: Phase B — fetching %d detail pages", len(detail_urls))
 
-    detail_results = bulk_fetch(detail_urls)
+    detail_map = {
+        url: html
+        for url, html in bulk_fetch(detail_urls)
+        if html
+    }
+    for card in plan.detail_listings:
+        detail_html = detail_map.get(card["url"], "")
+        if not detail_html:
+            continue
+        detail = _extract_detail_fields(detail_html)
+        if detail["tipo"]:
+            card["tipo"] = detail["tipo"]
+        if detail["area"]:
+            card["area"] = detail["area"]
+        if detail["estrato"]:
+            card["estrato"] = detail["estrato"]
+        if detail.get("parqueaderos") is not None:
+            card["parqueaderos"] = detail["parqueaderos"]
 
-    # Build URL → HTML lookup
-    detail_map: dict[str, str] = {}
-    for url, html in detail_results:
-        if html:
-            detail_map[url] = html
-
-    # ---- Merge Phase A + Phase B ----
     for card in cards:
-        url = card["url"]
-        detail_html = detail_map.get(url, "")
-        if detail_html:
-            detail = _extract_detail_fields(detail_html)
-
-            if detail["tipo"]:
-                card["tipo"] = detail["tipo"]
-            if detail["area"]:
-                card["area"] = detail["area"]
-            if detail["estrato"]:
-                card["estrato"] = detail["estrato"]
-            # None means "garaje label not on page" — keep Phase A value
-            # (which may itself be 0 or a value from the homepage card)
-            if detail.get("parqueaderos") is not None:
-                card["parqueaderos"] = detail["parqueaderos"]
-
         validate(card)
-        all_listings.append(card)
 
     if verbose:
         complete = sum(
             1
-            for l in all_listings
-            if l["tipo"] and l["area"] > 0 and l["estrato"] > 0
+            for card in cards
+            if card["tipo"] and card["area"] > 0 and card["estrato"] > 0
         )
         logger.info(
             "ALN: %d total, %d have tipo+area+estrato from detail",
-            len(all_listings),
+            len(cards),
             complete,
         )
 
-    return all_listings
+    return cards
