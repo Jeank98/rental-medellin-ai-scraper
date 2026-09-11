@@ -55,10 +55,9 @@ class TestSampleOnlyNoWrite(unittest.TestCase):
 
         mock_csv.assert_not_called()
         mock_db.assert_not_called()
-        # Fixture yields 1 listing per property type (Apartamento + Casa),
-        # so the real scraper reports 2 listings extracted.
+        # The frozen RSC fixture contains one apartamento listing.
         self.assertIn(
-            "Sample: 2 listing(s) extracted", mock_stdout.getvalue(),
+            "Sample: 1 listing(s) extracted", mock_stdout.getvalue(),
             "Sample line must report the extracted listing count",
         )
 
