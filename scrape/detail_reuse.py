@@ -31,6 +31,8 @@ def plan_active_detail_reuse(
     ciudad: str,
     detail_fields: tuple[str, ...],
     preserve_current_fields: frozenset[str] = frozenset(),
+    prior_detail_evidence: Callable[[Mapping[str, object]], bool] | None = None,
+    is_reusable_detail_value: Callable[[str, object], bool] | None = None,
 ) -> DetailReusePlan:
     """Plan reuse from the active DB snapshot or preserve full-detail fallback."""
     try:
@@ -50,6 +52,8 @@ def plan_active_detail_reuse(
         previous_by_id,
         detail_fields,
         preserve_current_fields,
+        prior_detail_evidence,
+        is_reusable_detail_value,
     )
 
 
@@ -86,6 +90,8 @@ def plan_detail_reuse(
     previous_by_id: Mapping[str, Mapping[str, object]],
     detail_fields: tuple[str, ...],
     preserve_current_fields: frozenset[str] = frozenset(),
+    prior_detail_evidence: Callable[[Mapping[str, object]], bool] | None = None,
+    is_reusable_detail_value: Callable[[str, object], bool] | None = None,
 ) -> DetailReusePlan:
     """Reuse declared Phase-B fields when stable IDs have identical prices."""
     return _plan_detail_reuse(
@@ -94,6 +100,8 @@ def plan_detail_reuse(
         detail_fields,
         preserve_current_fields,
         _stable_id,
+        prior_detail_evidence,
+        is_reusable_detail_value,
     )
 
 
@@ -119,6 +127,8 @@ def _plan_detail_reuse(
     detail_fields: tuple[str, ...],
     preserve_current_fields: frozenset[str],
     key_for: Callable[[Mapping[str, object]], str | None],
+    prior_detail_evidence: Callable[[Mapping[str, object]], bool] | None = None,
+    is_reusable_detail_value: Callable[[str, object], bool] | None = None,
 ) -> DetailReusePlan:
     """Copy declared fields for rows whose stable key and positive price match."""
     detail_listings: list[dict] = []
@@ -132,7 +142,14 @@ def _plan_detail_reuse(
             _positive_integer_price(previous.get("precio")) if previous else None
         )
 
-        if current_price is None or current_price != previous_price:
+        if (
+            current_price is None
+            or current_price != previous_price
+            or (
+                prior_detail_evidence is not None
+                and (previous is None or not prior_detail_evidence(previous))
+            )
+        ):
             detail_listings.append(listing)
             continue
 
@@ -143,7 +160,10 @@ def _plan_detail_reuse(
             ):
                 continue
             value = previous.get(field)
-            if value is not None:
+            if value is not None and (
+                is_reusable_detail_value is None
+                or is_reusable_detail_value(field, value)
+            ):
                 listing[field] = value
         reused_count += 1
 

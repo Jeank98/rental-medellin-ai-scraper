@@ -139,6 +139,57 @@ class TestTwoPhaseScrape(unittest.TestCase):
         self.assertEqual(rows[1]["estrato"], 4)
         self.assertTrue(all(list(row) == COLUMNS for row in rows))
 
+    def test_scrape_reuses_only_rows_with_detail_evidence(self):
+        search = _load("search_page_1.html")
+        search_rows, _ = parse_search_page(search)
+        reused = next(row for row in search_rows if row["id"] == "PRO-10163884")
+        fetched = next(row for row in search_rows if row["id"] == "PRO-10205313")
+        previous = {
+            str(reused["id"]): {
+                **reused,
+                "tipo": "apartamento",
+                "area": 70,
+                "habitaciones": 0,
+                "banos": 2,
+                "parqueaderos": 0,
+                "estrato": 4,
+                "barrio": "San Joaquín",
+            },
+            str(fetched["id"]): {
+                **fetched,
+                "area": 999,
+                "estrato": 0,
+            },
+        }
+        detail_sale = _load("detail_10163884.html").replace(
+            "10163884",
+            "10205313",
+        )
+
+        with (
+            mock.patch(
+                "scrape.proserinmobiliaria.fetch_page",
+                return_value=search,
+            ),
+            mock.patch(
+                "db.get_active_listings_by_id",
+                return_value=previous,
+            ) as snapshot,
+            mock.patch(
+                "scrape.proserinmobiliaria.bulk_fetch",
+                return_value=[(str(fetched["url"]), detail_sale)],
+            ) as details,
+        ):
+            rows = scrape(max_pages=1, reuse_unchanged_details=True)
+
+        snapshot.assert_called_once_with("proserinmobiliaria", "medellin")
+        details.assert_called_once_with([str(fetched["url"])])
+        by_id = {str(row["id"]): row for row in rows}
+        self.assertEqual(by_id[str(reused["id"])]["area"], 70)
+        self.assertEqual(by_id[str(reused["id"])]["estrato"], 4)
+        self.assertEqual(by_id[str(reused["id"])]["habitaciones"], 2)
+        self.assertNotEqual(by_id[str(fetched["id"])]["area"], 999)
+
     def test_scrape_drops_rows_without_detail_evidence(self):
         with mock.patch("scrape.proserinmobiliaria.fetch_page", return_value=_load("search_page_1.html")), mock.patch(
             "scrape.proserinmobiliaria.bulk_fetch", return_value=[]

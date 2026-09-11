@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import TypeAlias
 from urllib.parse import parse_qs, urlparse
@@ -10,6 +11,11 @@ from urllib.parse import parse_qs, urlparse
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
+from scrape.detail_reuse import (
+    DetailReusePlan,
+    full_detail_plan,
+    plan_active_detail_reuse,
+)
 from scrape.fetcher import bulk_fetch, fetch_page
 from scrape.normalize import normalize_barrio, normalize_price, normalize_tipo
 from scrape.proserinmobiliaria_detail import merge_detail, parse_detail_page
@@ -39,6 +45,16 @@ _SEARCH_TAIL = (
 )
 _TIPOS = _RESIDENTIAL_TYPES | {"local", "oficina", "bodega", "lote", "finca"}
 _COMMERCIAL_USE_MARKERS = ("casa comercial", "uso comercial")
+_DETAIL_FIELDS = (
+    "tipo",
+    "area",
+    "habitaciones",
+    "banos",
+    "parqueaderos",
+    "estrato",
+    "barrio",
+)
+
 
 
 def _page_url(source_url: str, page: int) -> str:
@@ -258,7 +274,53 @@ def parse_search_page(html: str) -> tuple[list[Listing], set[int]]:
     return rows, pages
 
 
-def scrape(ciudad: str = "medellin", sample_only: bool = False, max_pages: int | None = None, verbose: bool = False) -> list[Listing]:
+def _has_verified_detail(previous: Mapping[str, object]) -> bool:
+    """Require a detail-only positive estrato from the prior active row."""
+    estrato = previous.get("estrato")
+    return isinstance(estrato, int) and not isinstance(estrato, bool) and 1 <= estrato <= 6
+
+
+def _is_merged_detail_value(_field: str, value: object) -> bool:
+    """Mirror Proser's merge rule for fields absent from a detail response."""
+    return (
+        isinstance(value, str)
+        and bool(value)
+        or isinstance(value, int)
+        and not isinstance(value, bool)
+        and value > 0
+    )
+
+
+def _plan_phase_b(
+    listings: list[Listing],
+    ciudad: str,
+    reuse_unchanged_details: bool,
+) -> DetailReusePlan:
+    if not reuse_unchanged_details:
+        return full_detail_plan(listings)
+
+    plan = plan_active_detail_reuse(
+        listings,
+        PORTAL,
+        ciudad,
+        _DETAIL_FIELDS,
+        prior_detail_evidence=_has_verified_detail,
+        is_reusable_detail_value=_is_merged_detail_value,
+    )
+    print(
+        "PRO detail reuse: "
+        f"{plan.reused_count} reused; {plan.detail_fetch_count} detail pages fetched"
+    )
+    return plan
+
+
+def scrape(
+    ciudad: str = "medellin",
+    sample_only: bool = False,
+    max_pages: int | None = None,
+    verbose: bool = False,
+    reuse_unchanged_details: bool = False,
+) -> list[Listing]:
     if ciudad.casefold().replace("í", "i") != "medellin":
         logger.warning("Proser mapping is scoped to Medellín; got ciudad=%s", ciudad)
         return []
@@ -284,16 +346,20 @@ def scrape(ciudad: str = "medellin", sample_only: bool = False, max_pages: int |
     if not listings:
         return []
 
-    detail_map = dict(bulk_fetch([str(row["url"]) for row in listings]))
+    plan = _plan_phase_b(listings, ciudad, reuse_unchanged_details)
+    detail_urls = [str(row["url"]) for row in plan.detail_listings]
+    detail_url_set = set(detail_urls)
+    detail_map = dict(bulk_fetch(detail_urls)) if detail_urls else {}
     complete: list[Listing] = []
     for row in listings:
         url = str(row["url"])
-        html = detail_map.get(url, "")
-        if not html:
-            logger.warning("Dropping %s; detail fields were not fetched", row["id"])
-            continue
-        if not merge_detail(row, parse_detail_page(html, url)):
-            continue
+        if url in detail_url_set:
+            html = detail_map.get(url, "")
+            if not html:
+                logger.warning("Dropping %s; detail fields were not fetched", row["id"])
+                continue
+            if not merge_detail(row, parse_detail_page(html, url)):
+                continue
         if row["tipo"] not in _RESIDENTIAL_TYPES:
             logger.warning("Dropping %s after detail type guard (%s)", row["id"], row["tipo"])
             continue

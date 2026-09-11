@@ -44,5 +44,38 @@ class TestSampleOnlyNoWrite(unittest.TestCase):
         self.assertIn("Sample: 2 listing(s) extracted", stdout.getvalue())
 
 
+
+class TestReuseFlag(unittest.TestCase):
+    def test_forwards_reuse_flag(self):
+        args = argparse.Namespace(
+            portal="proserinmobiliaria",
+            output="both",
+            ciudad="medellin",
+            sample_only=True,
+            max_pages=1,
+            verbose=False,
+            reuse_unchanged_details=True,
+        )
+        with (
+            mock.patch(
+                "scripts.scrape_proserinmobiliaria.scrape",
+                return_value=[],
+            ) as scrape_mock,
+            mock.patch(
+                "scripts.scrape_proserinmobiliaria.run_scraper",
+                side_effect=lambda scraper_fn, **_kwargs: (scraper_fn(), 0)[1],
+            ),
+        ):
+            result = proser_cli.main(args=args)
+
+        self.assertEqual(result, 0)
+        scrape_mock.assert_called_once_with(
+            ciudad="medellin",
+            sample_only=True,
+            max_pages=1,
+            verbose=False,
+            reuse_unchanged_details=True,
+        )
+
 if __name__ == "__main__":
     unittest.main()
