@@ -12,7 +12,6 @@ from scrape.csv_writer import write_to_csv
 from scrape.db_writer import write_to_db
 from scrape.validator import validate
 
-
 RESULT_MARKER = "SCRAPER_RESULT "
 
 
@@ -109,9 +108,17 @@ def run_scraper(scraper_fn, portal: str = None, args: argparse.Namespace = None)
         print(f"Error: {error}. Check the URL or network.", file=sys.stderr)
         raise SystemExit(2)
 
+    active_rows = [
+        row
+        for row in rows
+        if str(row.get("status", "active")).casefold() == "active"
+    ]
+    unavailable_count = len(rows) - len(active_rows)
+
+
     # Anomaly detection
     anomaly_count = 0
-    for row in rows:
+    for row in active_rows:
         warnings = validate(row)
         if warnings:
             anomaly_count += len(warnings)
@@ -123,7 +130,7 @@ def run_scraper(scraper_fn, portal: str = None, args: argparse.Namespace = None)
 
     if anomaly_count > 0:
         print(
-            f"\n{anomaly_count} anomaly(s) detected across {len(rows)} listings.",
+            f"\n{anomaly_count} anomaly(s) detected across {len(active_rows)} active listings.",
             file=sys.stderr,
         )
         print()
@@ -132,6 +139,8 @@ def run_scraper(scraper_fn, portal: str = None, args: argparse.Namespace = None)
     if args.sample_only:
         _emit_result(portal, "success", len(rows))
         print(f"Sample: {len(rows)} listing(s) extracted")
+        if unavailable_count:
+            print(f"Unavailable: {unavailable_count} listing(s)")
         print()
         print("Sample listing(s):")
         for row in rows[:3]:
@@ -144,7 +153,7 @@ def run_scraper(scraper_fn, portal: str = None, args: argparse.Namespace = None)
 
     try:
         if args.output in ('csv', 'both'):
-            write_to_csv(rows, portal, args.ciudad)
+            write_to_csv(active_rows, portal, args.ciudad)
 
         if args.output in ('db', 'both'):
             inserted = write_to_db(rows, portal, args.ciudad)
@@ -161,7 +170,10 @@ def run_scraper(scraper_fn, portal: str = None, args: argparse.Namespace = None)
         print(f"Error: output write failed for {portal}: {error}", file=sys.stderr)
         return 1
 
-    print(f"Scraped {len(rows)} listings from {portal}")
+    message = f"Scraped {len(active_rows)} active listings from {portal}"
+    if unavailable_count:
+        message += f"; marked {unavailable_count} unavailable"
+    print(message)
     _emit_result(portal, "success", len(rows))
     return 0
 

@@ -91,5 +91,44 @@ class TestSampleOnly(unittest.TestCase):
         )
 
 
+
+class TestUnavailableOutput(unittest.TestCase):
+    """Ghost rows persist for diagnosis but never enter the active CSV."""
+
+    def test_unavailable_rows_write_to_db_but_not_csv(self):
+        args = argparse.Namespace(
+            portal="lapalmainmobiliaria",
+            output="both",
+            ciudad="medellin",
+            sample_only=False,
+            max_pages=1,
+            verbose=False,
+            reuse_unchanged_details=False,
+        )
+        active = {"id": "LPI-1", "portal": "lapalmainmobiliaria"}
+        unavailable = {
+            "id": "LPI-2",
+            "portal": "lapalmainmobiliaria",
+            "status": "unavailable",
+        }
+
+        with (
+            mock.patch(
+                "scripts.scrape_lapalma.scrape",
+                return_value=[active, unavailable],
+            ),
+            mock.patch("scrape.cli.validate", return_value=[]),
+            mock.patch("scrape.cli.write_to_csv") as csv_mock,
+            mock.patch("scrape.cli.write_to_db", return_value=2) as db_mock,
+        ):
+            self.assertEqual(scripts.scrape_lapalma.main(args=args), 0)
+
+        csv_mock.assert_called_once_with([active], "lapalmainmobiliaria", "medellin")
+        db_mock.assert_called_once_with(
+            [active, unavailable],
+            "lapalmainmobiliaria",
+            "medellin",
+        )
+
 if __name__ == "__main__":
     unittest.main()
