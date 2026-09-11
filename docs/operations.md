@@ -45,6 +45,7 @@ price match the active row for that portal and city:
 | `scripts/scrape_zitios.py --reuse-unchanged-details` | Zitios | `area`, `habitaciones`, `banos`, `parqueaderos`, `estrato`, `barrio` |
 | `scripts/scrape_arangotobon.py --reuse-unchanged-details` | Arango Tobón | `parqueaderos`, `estrato`, `barrio` |
 | `scripts/scrape_panoramainmobiliario.py --reuse-unchanged-details` | Panorama Inmobiliario | `area`, `habitaciones`, `banos`, `parqueaderos`, `estrato`, `barrio` |
+| `scripts/scrape_lapalma.py --reuse-unchanged-details` | La Palma | `estrato`, `barrio` |
 
 Changed, new, zero-price, or unavailable prior rows use the normal detail-fetch
 path. The flag never changes the atomic DB replacement contract, and a
