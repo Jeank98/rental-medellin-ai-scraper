@@ -5,8 +5,8 @@ adapters add different operational fields:
 
 | Surface | Shape | Notes |
 |---|---|---|
-| CSV | 11 columns | Compact interchange output; no `ciudad`, `status`, or `scraped_at` columns. The city is encoded in the filename. |
-| PostgreSQL | 14 columns | The 11 fields plus `ciudad`, `status`, and `scraped_at`. `insert_listings(rows, ciudad=...)` receives city explicitly and deactivates only that portal/city snapshot. |
+| CSV | 11 columns | Compact interchange output; no `ciudad`, `status`, or `scraped_at` columns. The city is encoded in the filename. Only active rows are written. |
+| PostgreSQL | 14 columns | The 11 fields plus `ciudad`, `status`, and `scraped_at`. `status` is `active`, `unavailable` (a current search card with an explicit dead-detail response), or `inactive` (absent from a completed source snapshot). `insert_listings(rows, ciudad=...)` receives city explicitly and deactivates only that portal/city snapshot. |
 | Google Sheets | 14 columns | Mirrors active PostgreSQL rows only, filtered by requested city, `precio >= 200000`, and allowed residential `tipo`. |
 
 All numeric fields are plain integers (no formatting, no symbols, no decimals).

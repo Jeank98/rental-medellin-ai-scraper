@@ -26,6 +26,7 @@ _TYPE_IDS = {"apartamento": "2", "casa": "1", "apartaestudio": "14"}
 _COLUMNS = ["id", "portal", "tipo", "precio", "area", "habitaciones", "banos", "parqueaderos", "estrato", "barrio", "url"]
 _TYPE_WORDS = ("APARTAESTUDIO", "APARTAMENTO", "BODEGA", "OFICINA", "LOCAL", "CASA", "FINCA", "LOTE")
 _UNAVAILABLE_WORDS = ("ALQUILADO", "ARRENDADO")
+_UNAVAILABLE_DETAIL_MARKERS = ("NO SE ENCONTRO INMUEBLE",)
 Listing = TypedDict("Listing", {"id": str, "portal": str, "tipo": str, "precio": int, "area": int, "habitaciones": int, "banos": int, "parqueaderos": int, "estrato": int, "barrio": str, "url": str})
 DetailFields = TypedDict("DetailFields", {"estrato": int, "barrio": str})
 
@@ -148,6 +149,13 @@ def _is_unavailable(card) -> bool:
     lines = {_fold(line) for line in _lines(card)}
     return any(any(word in line for word in _UNAVAILABLE_WORDS) for line in lines)
 
+
+
+def _is_unavailable_detail(html: str) -> bool:
+    """Recognize La Palma's explicit detail-page not-found response."""
+    soup = BeautifulSoup(html, "html.parser")
+    text = _fold(" ".join(_lines(soup)))
+    return any(marker in text for marker in _UNAVAILABLE_DETAIL_MARKERS)
 
 def _extract_type(lines: list[str]) -> str:
     text = _fold(" ".join(lines))
@@ -276,19 +284,19 @@ def _plan_phase_b(
     ciudad: str,
     reuse_unchanged_details: bool,
 ) -> DetailReusePlan:
-    """Reuse La Palma's detail-only fields for price-stable active rows."""
+    """Reuse cached fields while probing every detail page for availability."""
     if not reuse_unchanged_details:
         return full_detail_plan(listings)
 
     plan = plan_active_detail_reuse(listings, _PORTAL, ciudad, _DETAIL_FIELDS)
     logger.info(
-        "LPI detail reuse: %d reused, %d detail pages to fetch",
+        "LPI detail reuse: %d cached; %d availability pages to fetch",
         plan.reused_count,
-        plan.detail_fetch_count,
+        len(listings),
     )
     print(
         "LPI detail reuse: "
-        f"{plan.reused_count} reused; {plan.detail_fetch_count} detail pages fetched"
+        f"{plan.reused_count} cached; {len(listings)} availability pages fetched"
     )
     return plan
 
@@ -298,14 +306,25 @@ def _phase_b(
     listings: list[Listing],
     verbose: bool,
 ) -> list[Listing]:
-    """Fetch outstanding details and validate all current residential rows."""
-    urls = [row["url"] for row in detail_listings if row["url"]]
+    """Fetch every detail page, classify ghosts, and enrich outstanding rows."""
+    # A price-stable cached row still needs a fresh response: the search card
+    # can remain while La Palma serves its explicit not-found detail page.
+    detail_url_set = {row["url"] for row in detail_listings if row["url"]}
+    urls = [row["url"] for row in listings if row["url"]]
     detail_map = dict(bulk_fetch(urls))
-    for row in detail_listings:
-        html = detail_map.get(row["url"], "")
-        if html:
-            row.update(parse_detail_page(html))
+
     for row in listings:
+        html = detail_map.get(row["url"], "")
+        if not html:
+            continue
+        if _is_unavailable_detail(html):
+            row["status"] = "unavailable"
+        elif row["url"] in detail_url_set:
+            row.update(parse_detail_page(html))
+
+    for row in listings:
+        if row.get("status") == "unavailable":
+            continue
         warnings = validate(row)
         if verbose:
             for warning in warnings:

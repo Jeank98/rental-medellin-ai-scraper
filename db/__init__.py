@@ -10,6 +10,8 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 TABLE_NAME = "listings"
+LISTING_STATUSES = frozenset(("active", "inactive", "unavailable"))
+
 
 _DATABASE_URL = None
 
@@ -48,7 +50,7 @@ CREATE INDEX IF NOT EXISTS idx_listings_portal_ciudad_status ON {TABLE_NAME} (po
 
 INSERT_SQL = f"""
 INSERT INTO {TABLE_NAME} (id, portal, tipo, precio, area, habitaciones, banos, parqueaderos, estrato, barrio, url, ciudad, status)
-VALUES (%(id)s, %(portal)s, %(tipo)s, %(precio)s, %(area)s, %(habitaciones)s, %(banos)s, %(parqueaderos)s, %(estrato)s, %(barrio)s, %(url)s, %(ciudad)s, 'active')
+VALUES (%(id)s, %(portal)s, %(tipo)s, %(precio)s, %(area)s, %(habitaciones)s, %(banos)s, %(parqueaderos)s, %(estrato)s, %(barrio)s, %(url)s, %(ciudad)s, %(status)s)
 ON CONFLICT (id) DO UPDATE SET
     portal = EXCLUDED.portal,
     tipo = EXCLUDED.tipo,
@@ -61,12 +63,12 @@ ON CONFLICT (id) DO UPDATE SET
     barrio = EXCLUDED.barrio,
     url = EXCLUDED.url,
     ciudad = EXCLUDED.ciudad,
-    status = 'active',
+    status = EXCLUDED.status,
     scraped_at = NOW();
 """
 
 DEACTIVATE_SQL = f"""
-UPDATE {TABLE_NAME} SET status = 'inactive' WHERE portal = %(portal)s AND ciudad = %(ciudad)s AND status = 'active';
+UPDATE {TABLE_NAME} SET status = 'inactive' WHERE portal = %(portal)s AND ciudad = %(ciudad)s AND status != 'inactive';
 """
 
 _ACTIVE_LISTING_COLUMNS = (
@@ -90,6 +92,14 @@ FROM {TABLE_NAME}
 WHERE portal = %(portal)s AND ciudad = %(ciudad)s AND status = 'active'
 ORDER BY id;
 """
+
+
+def _row_status(row: dict) -> str:
+    raw_status = row.get("status", "active")
+    status = raw_status.casefold().strip() if isinstance(raw_status, str) else ""
+    if status not in LISTING_STATUSES:
+        raise ValueError(f"invalid listing status: {raw_status!r}")
+    return status
 
 
 
@@ -119,14 +129,21 @@ def create_tables():
 def insert_listing(row: dict):
     required = ["id", "portal", "tipo", "precio", "area", "habitaciones",
                 "banos", "parqueaderos", "estrato", "barrio", "url", "ciudad"]
-    values = {k: row.get(k, "" if k in ("id", "portal", "tipo", "barrio", "url", "ciudad") else 0) for k in required}
+    values = {
+        key: row.get(
+            key,
+            "" if key in ("id", "portal", "tipo", "barrio", "url", "ciudad") else 0,
+        )
+        for key in required
+    }
+    values["status"] = _row_status(row)
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(INSERT_SQL, values)
 
 
 def deactivate_listings(portal: str, ciudad: str):
-    """Mark all active listings for a portal+city as inactive before a new scrape."""
+    """Mark a portal+city snapshot inactive before its replacement."""
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(DEACTIVATE_SQL, {"portal": portal, "ciudad": ciudad})
@@ -154,6 +171,8 @@ def insert_listings(rows: list[dict], ciudad: str = "") -> int:
         * All rows are committed together in a single outer transaction. The
           function never partially-commits: either the whole batch succeeds
           or the whole batch is rolled back.
+        * Each row's optional ``status`` is ``active`` by default and must be
+          one of ``active``, ``unavailable``, or ``inactive``.
         * A summary log line is emitted on completion with the totals.
 
     Args:
@@ -205,6 +224,7 @@ def insert_listings(rows: list[dict], ciudad: str = "") -> int:
                 }
                 # Always override ciudad with the explicit arg.
                 values["ciudad"] = ciudad
+                values["status"] = _row_status(row)
                 sp_name = f"row_sp_{i}"
                 cur.execute(f"SAVEPOINT {sp_name}")
                 try:

@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlparse
 from scrape.detail_reuse import plan_active_detail_reuse
 from scrape.lapalma import (
     RESIDENTIAL_TYPES,
+    _is_unavailable_detail,
     build_page_url,
     parse_detail_page,
     parse_search_page,
@@ -97,6 +98,11 @@ class TestDetailParsing(unittest.TestCase):
             parse_detail_page(_load("detail_missing_fields.html")),
             {"estrato": 0, "barrio": ""},
         )
+
+    def test_recognizes_explicit_unavailable_detail_page(self):
+        self.assertTrue(_is_unavailable_detail(_load("detail_unavailable.html")))
+
+
 
 
 class TestTwoPhasePagination(unittest.TestCase):
@@ -195,6 +201,20 @@ class TestTwoPhasePagination(unittest.TestCase):
         self.assertEqual([row["id"] for row in rows], ["LPI-10255187"])
         self.assertEqual(bulk_mock.call_args.args[0], [residential["url"]])
 
+    def test_marks_explicit_ghost_detail_unavailable(self):
+        ghost = parse_search_page(_load("search_page.html"))[0]
+
+        with (
+            mock.patch("scrape.lapalma._phase_a", return_value=[ghost]),
+            mock.patch(
+                "scrape.lapalma.bulk_fetch",
+                return_value=[(ghost["url"], _load("detail_unavailable.html"))],
+            ),
+        ):
+            rows = scrape()
+
+        self.assertEqual(rows[0]["status"], "unavailable")
+
 
     def test_reuses_unchanged_details_after_residential_guard(self):
         reused, changed = parse_search_page(_load("search_page.html"))
@@ -223,7 +243,10 @@ class TestTwoPhasePagination(unittest.TestCase):
             ) as snapshot,
             mock.patch(
                 "scrape.lapalma.bulk_fetch",
-                return_value=[(changed["url"], _load("detail_villa_hermosa.html"))],
+                return_value=[
+                    (reused["url"], _load("detail_missing_fields.html")),
+                    (changed["url"], _load("detail_villa_hermosa.html")),
+                ],
             ) as detail_fetch,
         ):
             rows = scrape(reuse_unchanged_details=True)
@@ -233,7 +256,7 @@ class TestTwoPhasePagination(unittest.TestCase):
             [row["id"] for row in planner.call_args.args[0]],
             [reused["id"], changed["id"]],
         )
-        detail_fetch.assert_called_once_with([changed["url"]])
+        detail_fetch.assert_called_once_with([reused["url"], changed["url"]])
         by_id = {row["id"]: row for row in rows}
         self.assertEqual(by_id[reused["id"]]["estrato"], 6)
         self.assertEqual(by_id[reused["id"]]["barrio"], "Anterior")
