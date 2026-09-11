@@ -31,6 +31,19 @@ Add `--ciudad CITY` for another city and `--report-dir DIR` to choose a report
 location. Use a per-portal script with `--sample-only` for a bounded diagnostic;
 sample mode never writes CSV, DB, or Sheets.
 
+## SantaFe price-stable detail reuse
+
+`scripts/scrape_asf.py --reuse-unchanged-details` is an opt-in pilot. It still
+fetches every SantaFe search page; when a fresh card has the same stable ID and
+positive price as the active row for that portal and city, it reuses the prior
+`banos` and `estrato` instead of requesting that detail page. Changed, new,
+zero-price, or unavailable prior rows use the normal detail fetch path.
+
+The flag never changes the atomic DB replacement contract. A database-read
+failure logs a warning and performs a complete SantaFe detail scrape. Use
+`--sample-only --max-pages 3` first: it reads the prior snapshot but writes no
+CSV, database, or Sheets output.
+
 ## Phase and failure matrix
 
 | Phase | Success | Failure or skip | Downstream effect |

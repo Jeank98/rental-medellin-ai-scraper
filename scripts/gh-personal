@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Run GitHub CLI commands for this personal repository only.
+set -euo pipefail
+
+readonly EXPECTED_ACCOUNT="Jeank98"
+readonly GH_BIN="/usr/bin/gh"
+readonly PERSONAL_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/gh-personal"
+
+# Environment tokens take precedence over stored gh credentials. Clear them so
+# a work token cannot accidentally create a personal-repository PR.
+unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_REPO
+export GH_CONFIG_DIR="$PERSONAL_CONFIG_DIR"
+export GH_HOST="github.com"
+
+case "${1:-}" in
+    --help|-h|help)
+        exec "$GH_BIN" "$@"
+        ;;
+    auth)
+        case "${2:-}" in
+            login|status)
+                exec "$GH_BIN" "$@"
+                ;;
+        esac
+        ;;
+esac
+
+actual_account="$("$GH_BIN" api user --jq .login 2>/dev/null || true)"
+if [[ "$actual_account" != "$EXPECTED_ACCOUNT" ]]; then
+    cat >&2 <<EOF
+This repository requires GitHub account $EXPECTED_ACCOUNT.
+Authenticate its isolated CLI configuration with:
+  scripts/gh-personal auth login --hostname github.com --git-protocol ssh --web
+EOF
+    exit 1
+fi
+
+exec "$GH_BIN" "$@"

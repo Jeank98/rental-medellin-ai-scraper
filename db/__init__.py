@@ -69,6 +69,29 @@ DEACTIVATE_SQL = f"""
 UPDATE {TABLE_NAME} SET status = 'inactive' WHERE portal = %(portal)s AND ciudad = %(ciudad)s AND status = 'active';
 """
 
+_ACTIVE_LISTING_COLUMNS = (
+    "id",
+    "portal",
+    "tipo",
+    "precio",
+    "area",
+    "habitaciones",
+    "banos",
+    "parqueaderos",
+    "estrato",
+    "barrio",
+    "url",
+)
+
+ACTIVE_LISTINGS_BY_ID_SQL = f"""
+SELECT id, portal, tipo, precio, area, habitaciones, banos, parqueaderos,
+       estrato, barrio, url
+FROM {TABLE_NAME}
+WHERE portal = %(portal)s AND ciudad = %(ciudad)s AND status = 'active'
+ORDER BY id;
+"""
+
+
 
 @contextmanager
 def get_conn():
@@ -225,6 +248,20 @@ def get_count() -> int:
             cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAME}")
             return cur.fetchone()[0]
 
+
+
+def get_active_listings_by_id(portal: str, ciudad: str) -> dict[str, dict]:
+    """Return the current active portal+city snapshot keyed by stable ID."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            ACTIVE_LISTINGS_BY_ID_SQL,
+            {"portal": portal, "ciudad": ciudad},
+        )
+        rows = [
+            dict(zip(_ACTIVE_LISTING_COLUMNS, row))
+            for row in cur.fetchall()
+        ]
+    return {row["id"]: row for row in rows if row["id"]}
 
 def get_all() -> list[dict]:
     with get_conn() as conn:

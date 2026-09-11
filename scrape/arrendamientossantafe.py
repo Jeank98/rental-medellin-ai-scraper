@@ -11,18 +11,69 @@ import logging
 import re
 
 from bs4 import BeautifulSoup
+from psycopg2 import Error as DatabaseError
 
-from scrape.fetcher import fetch_page, bulk_fetch
+from scrape.detail_reuse import DetailReusePlan, plan_detail_reuse
+from scrape.fetcher import bulk_fetch, fetch_page
 from scrape.normalize import (
-    normalize_price,
-    normalize_tipo,
     normalize_barrio,
     normalize_estrato,
+    normalize_price,
+    normalize_tipo,
     normalize_url,
 )
 from scrape.validator import validate
 
 logger = logging.getLogger(__name__)
+
+
+_DETAIL_FIELDS = ("banos", "estrato")
+
+
+def _plan_phase_b(
+    listings: list[dict],
+    ciudad: str,
+    reuse_unchanged_details: bool,
+) -> DetailReusePlan:
+    """Select detail requests, falling back to the complete current path."""
+    if not reuse_unchanged_details:
+        return DetailReusePlan(
+            detail_listings=listings,
+            reused_count=0,
+            detail_fetch_count=sum(bool(row.get("url")) for row in listings),
+        )
+
+    try:
+        from db import get_active_listings_by_id
+
+        previous_by_id = get_active_listings_by_id(
+            "arrendamientossantafe",
+            ciudad,
+        )
+    except (DatabaseError, OSError, RuntimeError) as error:
+        logger.warning(
+            "ASF detail reuse unavailable; fetching all detail pages: %s",
+            error,
+        )
+        return DetailReusePlan(
+            detail_listings=listings,
+            reused_count=0,
+            detail_fetch_count=sum(bool(row.get("url")) for row in listings),
+        )
+
+    plan = plan_detail_reuse(listings, previous_by_id, _DETAIL_FIELDS)
+    logger.info(
+        "ASF detail reuse: %d reused, %d detail pages to fetch",
+        plan.reused_count,
+        plan.detail_fetch_count,
+    )
+    print(
+        "ASF detail reuse: "
+        f"{plan.reused_count} reused; {plan.detail_fetch_count} detail pages fetched"
+    )
+    return plan
+
+
 
 _BASE_URL = "https://arrendamientossantafe.com"
 _SEARCH_URL = f"{_BASE_URL}/propiedades/"
@@ -198,7 +249,11 @@ def _phase_b(listings: list[dict], verbose: bool = False) -> list[dict]:
 
 
 def scrape(
-    ciudad="medellin", sample_only=False, max_pages=None, verbose=False
+    ciudad="medellin",
+    sample_only=False,
+    max_pages=None,
+    verbose=False,
+    reuse_unchanged_details: bool = False,
 ) -> list[dict]:
     """Scrape Arrendamientos SantaFe rental listings (two-phase).
 
@@ -258,7 +313,8 @@ def scrape(
         return []
 
     # --- Phase B: Detail pages ---
-    listings = _phase_b(listings, verbose=verbose)
+    plan = _plan_phase_b(listings, ciudad, reuse_unchanged_details)
+    _phase_b(plan.detail_listings, verbose=verbose)
 
     if sample_only:
         print(f"Sample: {len(listings)} listing(s) extracted")
