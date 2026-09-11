@@ -31,18 +31,23 @@ Add `--ciudad CITY` for another city and `--report-dir DIR` to choose a report
 location. Use a per-portal script with `--sample-only` for a bounded diagnostic;
 sample mode never writes CSV, DB, or Sheets.
 
-## SantaFe price-stable detail reuse
+## Price-stable detail reuse
 
-`scripts/scrape_asf.py --reuse-unchanged-details` is an opt-in pilot. It still
-fetches every SantaFe search page; when a fresh card has the same stable ID and
-positive price as the active row for that portal and city, it reuses the prior
-`banos` and `estrato` instead of requesting that detail page. Changed, new,
-zero-price, or unavailable prior rows use the normal detail fetch path.
+These opt-in two-phase pilots still fetch every live search card. A fresh card
+reuses only the portal-specific Phase-B fields when its stable ID and positive
+price match the active row for that portal and city:
 
-The flag never changes the atomic DB replacement contract. A database-read
-failure logs a warning and performs a complete SantaFe detail scrape. Use
-`--sample-only --max-pages 3` first: it reads the prior snapshot but writes no
-CSV, database, or Sheets output.
+| Command | Portal | Reused detail fields |
+|---|---|---|
+| `scripts/scrape_asf.py --reuse-unchanged-details` | SantaFe | `banos`, `estrato` |
+| `scripts/scrape_santillana.py --reuse-unchanged-details` | Santillana | `area`, `habitaciones`, `banos`, `parqueaderos`, `estrato`, `barrio` |
+| `scripts/scrape_arrendamientoselcastillo.py --reuse-unchanged-details` | El Castillo | `estrato` |
+
+Changed, new, zero-price, or unavailable prior rows use the normal detail-fetch
+path. The flag never changes the atomic DB replacement contract, and a
+database-read failure logs a warning before performing a complete detail scrape.
+Use `--sample-only` first: it reads the prior snapshot but writes no CSV,
+database, or Sheets output.
 
 ## Phase and failure matrix
 

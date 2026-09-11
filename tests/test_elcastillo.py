@@ -178,6 +178,51 @@ def test_residential_sources_filter_commercial_before_detail_phase() -> None:
     assert all("oficina-enarriendo" not in url for url in detail_urls)
 
 
+def test_scrape_reuses_unchanged_stratum_and_fetches_only_price_misses(capsys) -> None:
+    search_html = _load("search_page.html")
+    residential = [
+        row for row in parse_search_html(search_html) if row["tipo"] != "local"
+    ]
+    reused, fresh = residential
+    previous = {
+        reused["id"]: {
+            "id": reused["id"],
+            "precio": reused["precio"],
+            "estrato": 6,
+        },
+        fresh["id"]: {
+            "id": fresh["id"],
+            "precio": fresh["precio"] - 1,
+            "estrato": 1,
+        },
+    }
+
+    with (
+        mock.patch(
+            "scrape.arrendamientoselcastillo.stealthy_fetch_with_action",
+            side_effect=[search_html, "", ""],
+        ),
+        mock.patch(
+            "scrape.arrendamientoselcastillo.bulk_fetch",
+            return_value=[(fresh["url"], _load("detail_49041.html"))],
+        ) as detail_fetch,
+        mock.patch(
+            "db.get_active_listings_by_id",
+            return_value=previous,
+        ) as snapshot,
+    ):
+        rows = scrape(reuse_unchanged_details=True)
+
+    snapshot.assert_called_once_with("arrendamientoselcastillo", "medellin")
+    assert detail_fetch.call_args.args[0] == [fresh["url"]]
+    assert (
+        "AEC detail reuse: 1 reused; 1 detail pages fetched" in capsys.readouterr().out
+    )
+    by_id = {row["id"]: row for row in rows}
+    assert by_id[reused["id"]]["estrato"] == 6
+    assert by_id[fresh["id"]]["estrato"] == 5
+
+
 def test_sample_cli_does_not_write_outputs() -> None:
     args = argparse.Namespace(
         portal="arrendamientoselcastillo",

@@ -1,7 +1,10 @@
 """Plan Phase-B enrichment reuse from a prior active listing snapshot."""
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
+
+from psycopg2 import Error as DatabaseError
 
 
 @dataclass(frozen=True, slots=True)
@@ -11,6 +14,37 @@ class DetailReusePlan:
     detail_listings: list[dict]
     reused_count: int
     detail_fetch_count: int
+
+
+def full_detail_plan(listings: list[dict]) -> DetailReusePlan:
+    """Return the existing all-detail behavior as an explicit plan."""
+    return DetailReusePlan(
+        detail_listings=listings,
+        reused_count=0,
+        detail_fetch_count=sum(bool(row.get("url")) for row in listings),
+    )
+
+
+def plan_active_detail_reuse(
+    listings: list[dict],
+    portal: str,
+    ciudad: str,
+    detail_fields: tuple[str, ...],
+) -> DetailReusePlan:
+    """Plan reuse from the active DB snapshot or preserve full-detail fallback."""
+    try:
+        from db import get_active_listings_by_id
+
+        previous_by_id = get_active_listings_by_id(portal, ciudad)
+    except (DatabaseError, OSError, RuntimeError) as error:
+        logging.getLogger(__name__).warning(
+            "%s detail reuse unavailable; fetching all detail pages: %s",
+            portal,
+            error,
+        )
+        return full_detail_plan(listings)
+
+    return plan_detail_reuse(listings, previous_by_id, detail_fields)
 
 
 def plan_detail_reuse(
@@ -30,7 +64,9 @@ def plan_detail_reuse(
     for listing in listings:
         listing_id = listing.get("id")
         current_price = _positive_integer_price(listing.get("precio"))
-        previous = previous_by_id.get(listing_id) if isinstance(listing_id, str) else None
+        previous = (
+            previous_by_id.get(listing_id) if isinstance(listing_id, str) else None
+        )
         previous_price = (
             _positive_integer_price(previous.get("precio")) if previous else None
         )

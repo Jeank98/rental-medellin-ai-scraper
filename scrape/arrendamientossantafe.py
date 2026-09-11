@@ -11,9 +11,12 @@ import logging
 import re
 
 from bs4 import BeautifulSoup
-from psycopg2 import Error as DatabaseError
 
-from scrape.detail_reuse import DetailReusePlan, plan_detail_reuse
+from scrape.detail_reuse import (
+    DetailReusePlan,
+    full_detail_plan,
+    plan_active_detail_reuse,
+)
 from scrape.fetcher import bulk_fetch, fetch_page
 from scrape.normalize import (
     normalize_barrio,
@@ -37,31 +40,14 @@ def _plan_phase_b(
 ) -> DetailReusePlan:
     """Select detail requests, falling back to the complete current path."""
     if not reuse_unchanged_details:
-        return DetailReusePlan(
-            detail_listings=listings,
-            reused_count=0,
-            detail_fetch_count=sum(bool(row.get("url")) for row in listings),
-        )
+        return full_detail_plan(listings)
 
-    try:
-        from db import get_active_listings_by_id
-
-        previous_by_id = get_active_listings_by_id(
-            "arrendamientossantafe",
-            ciudad,
-        )
-    except (DatabaseError, OSError, RuntimeError) as error:
-        logger.warning(
-            "ASF detail reuse unavailable; fetching all detail pages: %s",
-            error,
-        )
-        return DetailReusePlan(
-            detail_listings=listings,
-            reused_count=0,
-            detail_fetch_count=sum(bool(row.get("url")) for row in listings),
-        )
-
-    plan = plan_detail_reuse(listings, previous_by_id, _DETAIL_FIELDS)
+    plan = plan_active_detail_reuse(
+        listings,
+        "arrendamientossantafe",
+        ciudad,
+        _DETAIL_FIELDS,
+    )
     logger.info(
         "ASF detail reuse: %d reused, %d detail pages to fetch",
         plan.reused_count,
@@ -74,7 +60,6 @@ def _plan_phase_b(
     return plan
 
 
-
 _BASE_URL = "https://arrendamientossantafe.com"
 _SEARCH_URL = f"{_BASE_URL}/propiedades/"
 _PAGE_PARAMS = "bussines_type=Arrendar"
@@ -82,9 +67,17 @@ _STALE_CODE = "A9692"
 _PER_PAGE = 12
 
 _COLUMNS = [
-    "id", "portal", "tipo", "precio", "area",
-    "habitaciones", "banos", "parqueaderos", "estrato",
-    "barrio", "url",
+    "id",
+    "portal",
+    "tipo",
+    "precio",
+    "area",
+    "habitaciones",
+    "banos",
+    "parqueaderos",
+    "estrato",
+    "barrio",
+    "url",
 ]
 
 
@@ -129,8 +122,8 @@ def _extract_card(card) -> dict:
     if area_span:
         text = area_span.get_text(strip=True)
         # Extract digits before 'm' (handles both "55m²" and "55m2")
-        digits = text.split('m')[0].strip()
-        digits = ''.join(c for c in digits if c.isdecimal())
+        digits = text.split("m")[0].strip()
+        digits = "".join(c for c in digits if c.isdecimal())
         if digits:
             listing["area"] = int(digits)
 
@@ -215,11 +208,12 @@ def _phase_b(listings: list[dict], verbose: bool = False) -> list[dict]:
 
     # Suppress Scrapling's per-request INFO logs during bulk fetch
     import scrapling
+
     old_level = logging.getLogger("scrapling").level
     logging.getLogger("scrapling").setLevel(logging.WARNING)
-    
+
     results = bulk_fetch(urls)
-    
+
     logging.getLogger("scrapling").setLevel(old_level)
     detail_map = dict(results)
 
@@ -242,7 +236,10 @@ def _phase_b(listings: list[dict], verbose: bool = False) -> list[dict]:
     if verbose:
         logger.info(
             "ASF Phase B: banos=%d/%d non-zero, estrato=%d/%d non-zero",
-            banos_set, len(listings), estrato_set, len(listings),
+            banos_set,
+            len(listings),
+            estrato_set,
+            len(listings),
         )
 
     return listings
@@ -321,8 +318,7 @@ def scrape(
 
     if anomalies:
         print(
-            f"\n{len(anomalies)} anomaly(s) detected"
-            f" across {len(listings)} listings."
+            f"\n{len(anomalies)} anomaly(s) detected across {len(listings)} listings."
         )
 
     return listings
