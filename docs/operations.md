@@ -33,9 +33,11 @@ sample mode never writes CSV, DB, or Sheets.
 
 ## Price-stable detail reuse
 
-These opt-in two-phase pilots still fetch every live search card. A fresh card
-reuses only the portal-specific Phase-B fields when its stable ID and positive
-price match the active row for that portal and city:
+`scripts/run_all.py` enables detail reuse by default for these two-phase
+portals. Direct per-portal commands opt in with `--reuse-unchanged-details`.
+Both paths fetch every live search card; a fresh card reuses only the
+portal-specific Phase-B fields when its stable ID and positive price match the
+active row for that portal and city:
 
 | Command | Portal | Reused detail fields |
 |---|---|---|
@@ -51,7 +53,8 @@ price match the active row for that portal and city:
 | `scripts/scrape_proserinmobiliaria.py --reuse-unchanged-details` | Proser Inmobiliaria | `tipo`, `area`, `habitaciones`, `banos`, `parqueaderos`, `estrato`, `barrio` |
 
 Changed, new, zero-price, or unavailable prior rows use the normal detail-fetch
-path. Proser also requires a prior detail-only `estrato` in the `1`–`6` range
+path. Panorama also refetches a price-stable row when its cached `barrio` is
+blank. Proser requires a prior detail-only `estrato` in the `1`–`6` range
 before reuse; its row otherwise follows the normal detail-fetch path.
 The flag never changes the atomic DB replacement contract, and a database-read
 failure logs a warning before performing a complete detail scrape.

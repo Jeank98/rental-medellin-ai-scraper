@@ -61,6 +61,71 @@ class TestScriptResolution(unittest.TestCase):
         self.assertTrue(health[0]["healthy"])
 
 
+
+class TestDetailReuseDefaults(unittest.TestCase):
+    def test_all_two_phase_portals_enable_detail_reuse(self):
+        expected = {
+            "alnago",
+            "arangotobon",
+            "arrendamientoselcastillo",
+            "arrendamientosmonserrate",
+            "arrendamientossantafe",
+            "lapalmainmobiliaria",
+            "panoramainmobiliario",
+            "proserinmobiliaria",
+            "santillana",
+            "zitios",
+        }
+
+        enabled = {
+            portal
+            for portal, config in PORTALS.items()
+            if config.get("reuse_unchanged_details")
+        }
+
+        self.assertEqual(enabled, expected)
+
+    def test_parallel_scrape_passes_reuse_flag_only_to_enabled_portals(self):
+        results = [
+            CommandResult(
+                returncode=0,
+                stdout=(
+                    'SCRAPER_RESULT {"status":"success",'
+                    '"portal":"arrendamientossantafe","listings":1}'
+                ),
+                stderr="",
+                attempts=1,
+                elapsed=0.01,
+                error=None,
+            ),
+            CommandResult(
+                returncode=0,
+                stdout=(
+                    'SCRAPER_RESULT {"status":"success",'
+                    '"portal":"maxibienes","listings":1}'
+                ),
+                stderr="",
+                attempts=1,
+                elapsed=0.01,
+                error=None,
+            ),
+        ]
+
+        with patch(
+            "scrape.orchestrator.run_with_retries", side_effect=results
+        ) as run:
+            parallel_scrape(
+                ["arrendamientossantafe", "maxibienes"],
+                workers=1,
+                verbose=False,
+            )
+
+        santafe_command, maxibienes_command = [
+            call.args[0] for call in run.call_args_list
+        ]
+        self.assertIn("--reuse-unchanged-details", santafe_command)
+        self.assertNotIn("--reuse-unchanged-details", maxibienes_command)
+
 class _FakeFuture:
     def __init__(self, portal: str, result: dict):
         self.portal = portal

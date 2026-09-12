@@ -57,10 +57,13 @@ property-detail block. Labels observed in live samples include:
 - `Estrato`
 - `Tipo de inmueble`
 
-Merge positive detail values without replacing the filtered type. A failed
-detail fetch keeps card values and defaults. A non-residential detail type is
-rejected. Detail JSON-LD is SEO metadata and was inconsistent in a live
-sample, so it is not an extraction source.
+Merge positive detail values without replacing the filtered type. A response
+without a recognizable structured detail block is retried once; if it remains
+unusable, the portal run fails and atomically preserves the prior snapshot
+rather than writing card defaults. A structurally valid page may still omit
+`Zona / barrio` or `Estrato`; those fields retain their source defaults. A
+non-residential detail type is rejected. Detail JSON-LD is SEO metadata and
+was inconsistent in a live sample, so it is not an extraction source.
 
 ## Normalization and zero values
 
@@ -83,5 +86,6 @@ sample, so it is not an extraction source.
 - The site loads reCAPTCHA, has a CSRF token and `/gettoken`, and can issue
   location AJAX requests. The listing HTML itself was returned in the initial
   document; no inventory API or GraphQL endpoint was observed.
-- Use bounded concurrency and retries. Detail fetch volume is much larger
-  than search-page volume.
+- Detail fetches are capped at four concurrent requests because Wasi returns
+  HTTP 429 at the shared 20-worker rate. The shared fetcher retries 429
+  responses; keep this cap unless a live sample proves a higher safe rate.

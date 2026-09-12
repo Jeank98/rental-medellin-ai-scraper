@@ -22,26 +22,44 @@ SHEET_TIMEOUT_SECONDS = 900
 
 PORTALS = {
     "accrecer": {"module": "accrecer"},
-    "arangotobon": {"module": "arangotobon"},
+    "arangotobon": {"module": "arangotobon", "reuse_unchanged_details": True},
     "totalbienes": {"module": "totalbienes"},
     "maxibienes": {"module": "maxibienes"},
     "albertoalvarez": {"module": "albertoalvarez"},
-    "alnago": {"module": "alnago"},
+    "alnago": {"module": "alnago", "reuse_unchanged_details": True},
     "arrendamientosdelnorte": {"module": "arrendamientosdelnorte", "script": "adn"},
-    "arrendamientoselcastillo": {"module": "arrendamientoselcastillo"},
-    "arrendamientosmonserrate": {"module": "arrendamientosmonserrate", "script": "monserrate"},
-    "arrendamientossantafe": {"module": "arrendamientossantafe", "script": "asf"},
+    "arrendamientoselcastillo": {
+        "module": "arrendamientoselcastillo", "reuse_unchanged_details": True
+    },
+    "arrendamientosmonserrate": {
+        "module": "arrendamientosmonserrate",
+        "script": "monserrate",
+        "reuse_unchanged_details": True,
+    },
+    "arrendamientossantafe": {
+        "module": "arrendamientossantafe",
+        "script": "asf",
+        "reuse_unchanged_details": True,
+    },
     "arrendamientosvillacruz": {"module": "arrendamientosvillacruz", "script": "villacruz"},
     "coninsa": {"module": "coninsa"},
     "habitamos": {"module": "habitamos"},
     "merinohermanos": {"module": "merinohermanos"},
     "metrocasas": {"module": "metrocasas"},
-    "panoramainmobiliario": {"module": "panoramainmobiliario"},
+    "panoramainmobiliario": {
+        "module": "panoramainmobiliario", "reuse_unchanged_details": True
+    },
     "portadainmobiliaria": {"module": "portadainmobiliaria"},
-    "proserinmobiliaria": {"module": "proserinmobiliaria"},
-    "santillana": {"module": "santillana"},
-    "lapalmainmobiliaria": {"module": "lapalma", "script": "lapalma"},
-    "zitios": {"module": "zitios"},
+    "proserinmobiliaria": {
+        "module": "proserinmobiliaria", "reuse_unchanged_details": True
+    },
+    "santillana": {"module": "santillana", "reuse_unchanged_details": True},
+    "lapalmainmobiliaria": {
+        "module": "lapalma",
+        "script": "lapalma",
+        "reuse_unchanged_details": True,
+    },
+    "zitios": {"module": "zitios", "reuse_unchanged_details": True},
 }
 
 def _script_name(portal: str) -> str:
@@ -217,8 +235,20 @@ def parallel_scrape(
         script = _script_name(portal)
         if verbose:
             print(f"  ⏳ {portal:30s} scraping...", end="", flush=True)
+        command = [
+            "uv",
+            "run",
+            "python",
+            f"scripts/scrape_{script}.py",
+            "--output",
+            "db",
+            "--ciudad",
+            ciudad,
+        ]
+        if PORTALS[portal].get("reuse_unchanged_details"):
+            command.append("--reuse-unchanged-details")
         result = run_with_retries(
-            ["uv", "run", "python", f"scripts/scrape_{script}.py", "--output", "db", "--ciudad", ciudad],
+            command,
             timeout=3600,
             max_attempts=RETRY_ATTEMPTS,
             retry_delay=RETRY_DELAY_SECONDS,
