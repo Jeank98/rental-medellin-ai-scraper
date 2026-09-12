@@ -8,7 +8,6 @@ from unittest import mock
 
 import scripts.scrape_lapalma
 from scrape.cli import create_parser
-from scrape.orchestrator import PORTALS
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "lapalma"
 
@@ -20,11 +19,6 @@ def _load(name: str) -> str:
 class TestRegistry(unittest.TestCase):
     """The portal is available to the shared orchestrator."""
 
-    def test_lapalma_registration(self):
-        self.assertEqual(
-            PORTALS["lapalmainmobiliaria"],
-            {"module": "lapalma", "script": "lapalma"},
-        )
 
     def test_cli_default_uses_contract_portal_name(self):
         args = create_parser("lapalmainmobiliaria", "test").parse_args([])

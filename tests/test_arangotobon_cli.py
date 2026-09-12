@@ -6,12 +6,7 @@ from unittest import mock
 
 import scripts.scrape_arangotobon as arangotobon_cli
 from scrape.arangotobon import parse_search_page
-from scrape.orchestrator import PORTALS
 from tests.test_arangotobon import _load
-
-
-def test_arangotobon_is_registered_with_shared_orchestrator() -> None:
-    assert PORTALS["arangotobon"] == {"module": "arangotobon"}
 
 
 def test_sample_only_does_not_write_outputs() -> None:

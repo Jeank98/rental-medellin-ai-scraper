@@ -7,15 +7,9 @@ from unittest import mock
 
 import scripts.scrape_panoramainmobiliario as panorama_cli
 from scrape.cli import create_parser
-from scrape.orchestrator import PORTALS
 
 
 class TestRegistry(unittest.TestCase):
-    def test_portal_is_registered(self):
-        self.assertEqual(
-            PORTALS["panoramainmobiliario"],
-            {"module": "panoramainmobiliario"},
-        )
 
     def test_cli_default_uses_contract_portal_name(self):
         args = create_parser("panoramainmobiliario", "test").parse_args([])

@@ -33,9 +33,11 @@ sample mode never writes CSV, DB, or Sheets.
 
 ## Price-stable detail reuse
 
-These opt-in two-phase pilots still fetch every live search card. A fresh card
-reuses only the portal-specific Phase-B fields when its stable ID and positive
-price match the active row for that portal and city:
+`scripts/run_all.py` enables detail reuse by default for these two-phase
+portals. Direct per-portal commands opt in with `--reuse-unchanged-details`.
+Both paths fetch every live search card; a fresh card reuses only the
+portal-specific Phase-B fields when its stable ID and positive price match the
+active row for that portal and city:
 
 | Command | Portal | Reused detail fields |
 |---|---|---|
