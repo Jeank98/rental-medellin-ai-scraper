@@ -45,7 +45,7 @@ active row for that portal and city:
 | `scripts/scrape_santillana.py --reuse-unchanged-details` | Santillana | `area`, `habitaciones`, `banos`, `parqueaderos`, `estrato`, `barrio` |
 | `scripts/scrape_arrendamientoselcastillo.py --reuse-unchanged-details` | El Castillo | `estrato` |
 | `scripts/scrape_zitios.py --reuse-unchanged-details` | Zitios | `area`, `habitaciones`, `banos`, `parqueaderos`, `estrato`, `barrio` |
-| `scripts/scrape_arangotobon.py --reuse-unchanged-details` | Arango Tobón | `parqueaderos`, `estrato`, `barrio` |
+| `scripts/scrape_arangotobon.py --reuse-unchanged-details` | Arango Tobón | `habitaciones`, `banos`, `parqueaderos`, `estrato`, `barrio` |
 | `scripts/scrape_panoramainmobiliario.py --reuse-unchanged-details` | Panorama Inmobiliario | `area`, `habitaciones`, `banos`, `parqueaderos`, `estrato`, `barrio` |
 | `scripts/scrape_lapalma.py --reuse-unchanged-details` | La Palma | `estrato`, `barrio` |
 | `scripts/scrape_alnago.py --reuse-unchanged-details` | Alnago | `tipo`, `area`, `parqueaderos`, `estrato` |
