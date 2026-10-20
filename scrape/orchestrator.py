@@ -19,6 +19,8 @@ from scrape.run_report import write_json_report
 RETRY_ATTEMPTS = 2
 RETRY_DELAY_SECONDS = 5.0
 SHEET_TIMEOUT_SECONDS = 900
+BACKUP_PREFIX = "rental_scraper_"
+BACKUP_RETENTION = 3
 
 PORTALS = {
     "accrecer": {"module": "accrecer"},
@@ -446,6 +448,38 @@ def _coerce_backup_outcome(
     return _backup_outcome("skipped", reason=default_reason)
 
 
+def _prune_old_backups(
+    backup_path: Path,
+    keep: int = BACKUP_RETENTION,
+    verbose: bool = True,
+) -> list[str]:
+    """Delete the oldest ``rental_scraper_*.sql`` dumps, keeping ``keep`` newest.
+
+    Only files matching the orchestrator's own dump naming pattern are
+    considered, so unrelated ``.sql`` files in the backup directory survive.
+    Timestamps have a fixed width, so ordering by filename is chronological.
+    """
+    if keep <= 0:
+        return []
+    dumps = sorted(
+        (p for p in backup_path.glob(f"{BACKUP_PREFIX}*.sql") if p.is_file()),
+        key=lambda p: p.name,
+    )
+    stale = dumps[:-keep]
+    removed: list[str] = []
+    for dump in stale:
+        try:
+            dump.unlink()
+        except OSError as error:
+            if verbose:
+                print(f"  ⚠️  Could not remove old backup {dump.name}: {error}")
+            continue
+        removed.append(str(dump))
+        if verbose:
+            print(f"  🗑️  Removed old backup — {dump.name}")
+    return removed
+
+
 def backup_db(
     backup_dir: str = "~/Projects/Backups",
     verbose: bool = True,
@@ -470,7 +504,7 @@ def backup_db(
         backup_path.mkdir(parents=True, exist_ok=True)
 
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        dump_file = backup_path / f"rental_scraper_{timestamp}.sql"
+        dump_file = backup_path / f"{BACKUP_PREFIX}{timestamp}.sql"
         clean_url = _clean_db_url(db_url)
 
         if verbose:
@@ -487,7 +521,10 @@ def backup_db(
         )
         file_size = dump_file.stat().st_size
         if verbose:
-            print(f"  ✅ Backup complete — {file_size / 1024:.0f} KB\n")
+            print(f"  ✅ Backup complete — {file_size / 1024:.0f} KB")
+        _prune_old_backups(backup_path, verbose=verbose)
+        if verbose:
+            print()
         return _backup_outcome("success", path=str(dump_file))
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as error:
         if verbose:
