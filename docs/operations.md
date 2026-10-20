@@ -79,7 +79,12 @@ healthy portal sample must prove that extraction returned data.
 ## Backup and restore
 
 Backups are written by `pg_dump` to `~/Projects/Backups` by default, with names
-such as `rental_scraper_YYYYMMDD_HHMMSS.sql`. The JSON report keeps the legacy
+such as `rental_scraper_YYYYMMDD_HHMMSS.sql`. After a successful dump the
+orchestrator keeps only the three newest `rental_scraper_*.sql` files and
+deletes older ones (`BACKUP_RETENTION` in `scrape/orchestrator.py`); unrelated
+`.sql` files in that directory are never touched, and a failed dump deletes
+nothing. A current dump of the full listings database is roughly 2 MB.
+The JSON report keeps the legacy
 `backup_path` field and also records `backup.status`, `backup.path`,
 `backup.error`, and `backup.reason`.
 
