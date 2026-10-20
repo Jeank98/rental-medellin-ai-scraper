@@ -8,6 +8,7 @@ Phase B: Fetch each detail page for full fields from the structured
 import hashlib
 import logging
 import re
+import time
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
@@ -36,6 +37,19 @@ _BASE = "https://www.arrendamientosmonserrate.com"
 _LISTING_PAGES = 5
 _LISTING_URL = "/inmuebles/page/{page}/?swoof=1&product_cat=arrendamiento"
 _PORTAL = "arrendamientosmonserrate"
+
+# The portal throttles bursts with HTTP 429 and a cooldown: five sequential
+# listing pages and eight sequential detail fetches (~1 req/s) pass, while four
+# concurrent detail fetches trip the block for longer than the fetcher's
+# 1-2-4 s retry budget. Details are therefore fetched one at a time, ~1 req/s,
+# with a single long backoff before declaring the run degraded.
+_DETAIL_MAX_WORKERS = 1
+_DETAIL_BATCH_SIZE = 1
+_DETAIL_BATCH_PAUSE_SECONDS = 1.0
+_LISTING_PAGE_PAUSE_SECONDS = 1.0
+_DETAIL_RETRY_DELAY_SECONDS = 60.0
+_MAX_UNRESOLVED_DETAIL_RATIO = 0.2
+
 _DETAIL_FIELDS = (
     "id",
     "tipo",
@@ -262,6 +276,22 @@ def _merge_detail(listing: dict, detail: dict) -> None:
     if detail.get("barrio"):
         listing["barrio"] = normalize_barrio(detail["barrio"])
 
+
+def _fetch_detail_pages(urls: list[str]) -> dict[str, str]:
+    """Fetch detail pages in small batches to stay under the portal's rate limit."""
+    if not urls:
+        return {}
+    fetched: dict[str, str] = {}
+    for start in range(0, len(urls), _DETAIL_BATCH_SIZE):
+        batch = urls[start : start + _DETAIL_BATCH_SIZE]
+        for url, html in bulk_fetch(batch, max_workers=_DETAIL_MAX_WORKERS):
+            if html:
+                fetched[url] = html
+        if start + _DETAIL_BATCH_SIZE < len(urls) and _DETAIL_BATCH_PAUSE_SECONDS:
+            time.sleep(_DETAIL_BATCH_PAUSE_SECONDS)
+    return fetched
+
+
 def _plan_phase_b(
     listings: list[dict],
     ciudad: str,
@@ -334,6 +364,9 @@ def scrape(
 
         listings.extend(page_listings)
 
+        if page < max_listing_pages and _LISTING_PAGE_PAUSE_SECONDS:
+            time.sleep(_LISTING_PAGE_PAUSE_SECONDS)
+
     if not listings:
         return []
 
@@ -352,16 +385,50 @@ def scrape(
     if verbose:
         logger.info("MNS Phase B: fetching %d detail pages...", len(detail_urls))
 
-    detail_by_url = (
-        {url: html for url, html in bulk_fetch(detail_urls) if html}
-        if detail_urls
-        else {}
-    )
+    detail_by_url = _fetch_detail_pages(detail_urls)
+
+    unresolved = [
+        listing
+        for listing in plan.detail_listings
+        if not detail_by_url.get(listing["url"])
+    ]
+    if unresolved:
+        logger.warning(
+            "MNS Phase B: %d/%d detail pages unresolved; retrying once in %.0fs",
+            len(unresolved),
+            len(plan.detail_listings),
+            _DETAIL_RETRY_DELAY_SECONDS,
+        )
+        time.sleep(_DETAIL_RETRY_DELAY_SECONDS)
+        detail_by_url.update(
+            _fetch_detail_pages([listing["url"] for listing in unresolved])
+        )
+        unresolved = [
+            listing
+            for listing in plan.detail_listings
+            if not detail_by_url.get(listing["url"])
+        ]
+
+    if unresolved and plan.detail_listings:
+        ratio = len(unresolved) / len(plan.detail_listings)
+        if ratio > _MAX_UNRESOLVED_DETAIL_RATIO:
+            raise RuntimeError(
+                "MNS detail pages unresolved: "
+                f"{len(unresolved)}/{len(plan.detail_listings)} ({ratio:.0%}) — "
+                "refusing to replace the snapshot with card-only rows"
+            )
+        logger.warning(
+            "MNS: dropping %d row(s) without a detail page (retired or unreachable)",
+            len(unresolved),
+        )
+
+    dropped = {id(listing) for listing in unresolved}
     for listing in plan.detail_listings:
         detail_html = detail_by_url.get(listing["url"], "")
         if detail_html:
             _merge_detail(listing, _parse_detail_page(detail_html))
 
+    listings = [listing for listing in listings if id(listing) not in dropped]
     _ensure_unique_ids(listings)
     for listing in listings:
         validate(listing)

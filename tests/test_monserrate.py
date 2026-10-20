@@ -166,3 +166,118 @@ def test_reuses_unchanged_detail_fields_by_stable_url() -> None:
 
     detail_fetch.assert_not_called()
     assert rows == [previous["MNS-A62"]]
+
+
+def _listing_page(count: int) -> str:
+    cards = "".join(
+        f"""
+      <li class="product type-product">
+        <a href="/propiedad/p{index}/"><h2 class="woocommerce-loop-product__title">Local en {index}</h2></a>
+        <span class="price">${index}.000.000</span>
+      </li>"""
+        for index in range(1, count + 1)
+    )
+    return f"<ul>{cards}</ul>"
+
+
+def _detail_html(code: str) -> str:
+    return f'<span class="sku_wrapper">Código: <span class="sku">{code}</span></span>'
+
+
+def test_detail_phase_fetches_one_page_at_a_time(monkeypatch) -> None:
+    import scrape.arrendamientosmonserrate as module
+
+    monkeypatch.setattr(module, "_DETAIL_BATCH_PAUSE_SECONDS", 0)
+    monkeypatch.setattr(module, "_LISTING_PAGE_PAUSE_SECONDS", 0)
+    calls: list[tuple[list[str], int | None]] = []
+
+    def fake_bulk(urls, max_workers=None):
+        calls.append((list(urls), max_workers))
+        return [(url, _detail_html(f"A{index}")) for index, url in enumerate(urls)]
+
+    with mock.patch(
+        "scrape.arrendamientosmonserrate.fetch_page",
+        return_value=_listing_page(3),
+    ), mock.patch(
+        "scrape.arrendamientosmonserrate.bulk_fetch", side_effect=fake_bulk
+    ):
+        rows = scrape(max_pages=1)
+
+    assert [len(urls) for urls, _ in calls] == [1, 1, 1]
+    assert all(workers == 1 for _, workers in calls)
+    assert len(rows) == 3
+
+
+def test_unresolved_details_retry_once_before_merging(monkeypatch) -> None:
+    import scrape.arrendamientosmonserrate as module
+
+    monkeypatch.setattr(module, "_DETAIL_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(module, "_LISTING_PAGE_PAUSE_SECONDS", 0)
+    attempts: list[list[str]] = []
+
+    def fake_bulk(urls, max_workers=None):
+        attempts.append(list(urls))
+        if len(attempts) == 1:
+            return [(url, "") for url in urls]
+        return [(url, _detail_html("A62")) for url in urls]
+
+    with mock.patch(
+        "scrape.arrendamientosmonserrate.fetch_page",
+        return_value=_listing_page(1),
+    ), mock.patch(
+        "scrape.arrendamientosmonserrate.bulk_fetch", side_effect=fake_bulk
+    ):
+        rows = scrape(max_pages=1)
+
+    assert len(attempts) == 2
+    assert rows[0]["id"] == "MNS-A62"
+
+
+def test_mostly_unresolved_details_fail_instead_of_writing_card_only_rows(
+    monkeypatch,
+) -> None:
+    import scrape.arrendamientosmonserrate as module
+
+    monkeypatch.setattr(module, "_DETAIL_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(module, "_LISTING_PAGE_PAUSE_SECONDS", 0)
+
+    with mock.patch(
+        "scrape.arrendamientosmonserrate.fetch_page",
+        return_value=_listing_page(5),
+    ), mock.patch(
+        "scrape.arrendamientosmonserrate.bulk_fetch",
+        return_value=[],
+    ):
+        try:
+            scrape(max_pages=1)
+        except RuntimeError as error:
+            assert "unresolved" in str(error)
+        else:
+            raise AssertionError("Expected unresolved details to fail the portal")
+
+
+def test_small_unresolved_set_drops_rows_without_synthetic_ids(monkeypatch) -> None:
+    import scrape.arrendamientosmonserrate as module
+
+    monkeypatch.setattr(module, "_DETAIL_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(module, "_LISTING_PAGE_PAUSE_SECONDS", 0)
+    missing_url = "https://www.arrendamientosmonserrate.com/propiedad/p3/"
+
+    def fake_bulk(urls, max_workers=None):
+        return [
+            (url, "" if url == missing_url else _detail_html("A62"))
+            for url in urls
+        ]
+
+    with mock.patch(
+        "scrape.arrendamientosmonserrate.fetch_page",
+        return_value=_listing_page(5),
+    ), mock.patch(
+        "scrape.arrendamientosmonserrate.bulk_fetch", side_effect=fake_bulk
+    ):
+        rows = scrape(max_pages=1)
+
+    assert len(rows) == 4
+    assert all(not str(row["id"]).startswith("MNS-URL") for row in rows)
+    assert all(row["id"].startswith("MNS-") for row in rows)
+
