@@ -154,6 +154,14 @@ class TestPortadaPagination(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no verified city id"):
             scrape(ciudad="bogota")
 
+    def test_sin_resultados_payload_is_an_empty_result(self):
+        from scrape.portadainmobiliaria import _validate_response
+
+        self.assertEqual(_validate_response("Sin resultados"), ([], {}))
+        self.assertEqual(_validate_response('  sin resultados '), ([], {}))
+        with self.assertRaises(RuntimeError):
+            _validate_response("Service Unavailable")
+
     def test_metro_city_ids_build_their_own_api_url(self):
         from scrape.portadainmobiliaria import build_api_url
 

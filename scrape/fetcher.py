@@ -86,8 +86,10 @@ def fetch_page(url: str, method: str = "get") -> Optional[str]:
 
 
 def fetch_json(
-    url: str, headers: Optional[dict[str, str]] = None
-) -> Union[dict, list, None]:
+    url: str,
+    headers: Optional[dict[str, str]] = None,
+    allow_scalar: bool = False,
+) -> Union[dict, list, str, int, float, bool, None]:
     """Fetch a JSON REST API endpoint using Scrapling Fetcher.
 
     Args:
@@ -120,6 +122,8 @@ def fetch_json(
             else:
                 data = resp.json()
                 if isinstance(data, (dict, list)):
+                    return data
+                if allow_scalar:
                     return data
                 logger.error("Unexpected JSON type for %s: %s — NOT retrying", url, type(data).__name__)
                 return None

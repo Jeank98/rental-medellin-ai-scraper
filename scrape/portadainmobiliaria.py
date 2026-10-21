@@ -131,6 +131,13 @@ def _integer_value(raw) -> int:
 
 def _validate_response(data) -> tuple[list[dict], dict]:
     """Validate a useful API response and reject textual error payloads."""
+    if isinstance(data, str):
+        if data.strip().casefold() == "sin resultados":
+            logger.info("Portada API reported no listings for this type/city")
+            return [], {}
+        raise RuntimeError(
+            f"Portada API returned a non-object payload: {data.strip()[:80]!r}"
+        )
     if not isinstance(data, dict):
         raise RuntimeError("Portada API returned no JSON object")
 
@@ -222,7 +229,7 @@ def _total_pages(metadata: dict) -> int:
 def _fetch_page(page: int, tipo_id: int, ciudad: str = "medellin") -> dict:
     """Fetch one type/page response; callers validate before consuming it."""
     url = build_api_url(page, tipo_id, ciudad)
-    return fetch_json(url, headers=API_HEADERS)
+    return fetch_json(url, headers=API_HEADERS, allow_scalar=True)
 
 
 def scrape(
@@ -240,6 +247,8 @@ def scrape(
     for expected_tipo, tipo_id in RESIDENTIAL_TYPES.items():
         first_response = _fetch_page(1, tipo_id, ciudad)
         _items, metadata = _validate_response(first_response)
+        if not _items:
+            continue
         total_pages = _total_pages(metadata)
         if max_pages is not None:
             total_pages = min(total_pages, max_pages)
