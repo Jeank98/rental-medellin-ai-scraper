@@ -42,6 +42,13 @@ def test_build_page_url_rejects_unconfirmed_city() -> None:
         raise AssertionError("Expected unsupported city to be rejected")
 
 
+def test_build_page_url_covers_verified_metro_municipalities() -> None:
+    assert build_page_url(1, "envigado").endswith("municipio=envigado")
+    assert build_page_url(2, "Itagüí").endswith("municipio=itagui&pag=2")
+    assert build_page_url(1, "Sabaneta").endswith("municipio=sabaneta")
+    assert build_page_url(1, "La Estrella").endswith("municipio=la-estrella")
+
+
 def test_search_parser_maps_residential_cards_and_skips_other_classes() -> None:
     rows = parse_search_page(_load("search_page.html"))
 

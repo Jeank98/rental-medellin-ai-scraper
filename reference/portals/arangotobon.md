@@ -1,6 +1,9 @@
 # Arango Tobón Inmobiliaria (`ATB`)
 
 - **URL**: `https://arangotobon.com/todas-las-propiedades/?destinacion=Arriendo&municipio=medellin`
+- **Municipalities**: `medellin`, `envigado`, `itagui`, `sabaneta`, `la-estrella`
+  (verified slugs of the site's own `municipio` filter; the scraper raises
+  `UnsupportedCityError` for anything else)
 - **Type**: Server-rendered WordPress theme (GET form filters + `pag` pagination)
 - **Portal**: `arangotobon`
 - **Strategy**: Two-phase HTML with detail enrichment

@@ -61,6 +61,26 @@ failure logs a warning before performing a complete detail scrape.
 Use `--sample-only` first: it reads the prior snapshot but writes no CSV,
 database, or Sheets output.
 
+## Municipality runs
+
+Portals that expose more than Medellín are scraped **one municipality per
+invocation**; `ciudad` is stored as the real municipality and the DB snapshot
+replacement is scoped to `(portal, ciudad)`, so `--ciudad envigado` never
+touches Medellín rows.
+
+```bash
+uv run python scripts/scrape_arangotobon.py --output db --ciudad envigado
+uv run python scripts/scrape_zitios.py --output db --ciudad sabaneta
+```
+
+Verified today: `arangotobon` (medellin, envigado, itagui, sabaneta,
+la-estrella) and `zitios` (medellin, envigado, itagui, sabaneta; La Estrella's
+slug is still unknown). Unverified municipalities raise `UnsupportedCityError`
+instead of silently scraping Medellín.
+
+`scripts/export_to_sheets.py --city medellin` matches exactly, so after a metro
+run either export each city or omit `--city` to mirror every active row.
+
 ## Phase and failure matrix
 
 | Phase | Success | Failure or skip | Downstream effect |
