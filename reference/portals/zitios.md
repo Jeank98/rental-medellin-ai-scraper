@@ -1,6 +1,10 @@
 # Zitios Inmobiliaria (`ZIT`)
 
 - **URL**: `https://zitios.com.co/inmuebles/g/arriendo/c/medell%C3%ADn/`
+- **Municipalities**: `medellin` (`medell%C3%ADn`), `envigado`, `itagui`,
+  `sabaneta` — verified slugs in `/c/{slug}/`. `la-estrella` returns 404 with
+  both `la-estrella` and `laestrella`, so the scraper raises
+  `UnsupportedCityError` until its route is found.
 - **Residential search routes**: `/t/apartamentos/`, `/t/casas/`, and `/t/apartaestudios/` before `/c/medell%C3%ADn/`
 - **Type**: Server-rendered HTML with semantic schema.org metadata
 - **Listing card**: `article` elements with `itemprop="itemListElement"`

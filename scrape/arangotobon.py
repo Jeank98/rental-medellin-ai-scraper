@@ -32,6 +32,14 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://arangotobon.com"
 SEARCH_PATH = "/todas-las-propiedades/"
+_CITY_SLUGS = {
+    "medellin": "medellin",
+    "envigado": "envigado",
+    "itagui": "itagui",
+    "sabaneta": "sabaneta",
+    "la estrella": "la-estrella",
+    "la-estrella": "la-estrella",
+}
 SEARCH_URL = f"{BASE_URL}{SEARCH_PATH}?destinacion=Arriendo&municipio=medellin"
 PORTAL = "arangotobon"
 PREFIX = "ATB"
@@ -331,10 +339,16 @@ def merge_detail(row: Listing, detail: DetailFields) -> bool:
 
 
 def build_page_url(page: int, ciudad: str = "medellin") -> str:
-    """Build the verified Medellín rental route; page one has no ``pag`` param."""
-    if _fold(ciudad.strip()) != "MEDELLIN":
-        raise UnsupportedCityError(f"Arango Tobón only supports Medellín: {ciudad}")
-    return SEARCH_URL if page <= 1 else f"{SEARCH_URL}&pag={page}"
+    """Build the rental route for one verified municipality."""
+    key = _fold(ciudad.strip()).casefold()
+    slug = _CITY_SLUGS.get(key) or _CITY_SLUGS.get(key.replace(" ", "-"))
+    if slug is None:
+        raise UnsupportedCityError(
+            f"Arango Tobón has no verified municipality for {ciudad!r}; "
+            f"known: {sorted(set(_CITY_SLUGS.values()))}"
+        )
+    base = f"{BASE_URL}{SEARCH_PATH}?destinacion=Arriendo&municipio={slug}"
+    return base if page <= 1 else f"{base}&pag={page}"
 
 
 def _last_page(html: str) -> int | None:
