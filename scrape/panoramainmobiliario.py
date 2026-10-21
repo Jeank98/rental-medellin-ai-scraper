@@ -39,7 +39,15 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://panoramainmobiliario.co"
 PORTAL = "panoramainmobiliario"
 PREFIX = "PAN"
-CITY_IDS = {"medellin": "496"}
+CITY_IDS = {
+    "medellin": "496",
+    "envigado": "291",
+    "itagui": "389",
+    "la estrella": "416",
+    "la-estrella": "416",
+    "sabaneta": "698",
+}
+
 RESIDENTIAL_TYPES = ("apartaestudio", "apartamento", "casa")
 TYPE_IDS = {"apartaestudio": "14", "apartamento": "2", "casa": "1"}
 PER_PAGE = 12
@@ -93,11 +101,19 @@ def _empty_listing() -> Listing:
 
 
 def _city_id(ciudad: str) -> str:
-    normalized = ciudad.casefold().replace("í", "i")
+    normalized = (
+        ciudad.strip().casefold()
+        .replace("í", "i")
+        .replace("ü", "u")
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("ó", "o")
+    )
     city_id = CITY_IDS.get(normalized)
     if city_id is None:
         raise UnsupportedCityError(
-            f"Panorama mapping is scoped to Medellin; got ciudad={ciudad}"
+            f"Panorama has no verified city id for {ciudad!r}; known: "
+            f"{sorted(set(CITY_IDS.values()))}"
         )
     return city_id
 

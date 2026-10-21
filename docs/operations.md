@@ -74,9 +74,14 @@ uv run python scripts/scrape_zitios.py --output db --ciudad sabaneta
 ```
 
 Verified today: `arangotobon` (medellin, envigado, itagui, sabaneta,
-la-estrella) and `zitios` (medellin, envigado, itagui, sabaneta; La Estrella's
-slug is still unknown). Unverified municipalities raise `UnsupportedCityError`
-instead of silently scraping Medellín.
+la-estrella), `zitios` (medellin, envigado, itagui, sabaneta; La Estrella's
+slug is still unknown), `maxibienes`, `panoramainmobiliario`, `lapalma`,
+`portadainmobiliaria` and `coninsa` (all four south municipalities), plus
+`totalbienes` (medellin and itagui only — the rest 404). Unverified
+municipalities raise instead of silently scraping Medellín.
+
+Still pending: `metrocasas` (`location[]={municipio}-antioquia` responds but the
+card filter is unconfirmed) and `proser` (no municipality parameter found).
 
 `scripts/export_to_sheets.py --city medellin` matches exactly, so after a metro
 run use `--cities medellin,envigado,itagui,sabaneta,la-estrella` to mirror the
