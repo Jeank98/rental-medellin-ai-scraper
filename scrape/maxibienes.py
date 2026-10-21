@@ -20,7 +20,29 @@ from scrape.validator import validate
 logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://www.maxibienes.com/resultados-de-la-busqueda-de-inmueble/"
-_QUERY = "gestion=1&ciudad=5001"
+_CITY_IDS = {
+    "medellin": "5001",
+    "envigado": "5266",
+    "itagui": "5360",
+    "sabaneta": "5631",
+    "la estrella": "5380",
+    "la-estrella": "5380",
+}
+
+
+class UnsupportedCityError(KeyError):
+    """Raised when Maxibienes has no verified city id for the municipality."""
+
+
+def _city_id(ciudad: str) -> str:
+    key = ciudad.strip().casefold().replace("í", "i").replace("ü", "u")
+    city_id = _CITY_IDS.get(key)
+    if city_id is None:
+        raise UnsupportedCityError(
+            f"Maxibienes has no verified city id for {ciudad!r}; known: "
+            f"{sorted(set(_CITY_IDS.values()))}"
+        )
+    return city_id
 
 # FontAwesome icon → field key mapping
 _ICON_FIELD = {
@@ -37,10 +59,11 @@ _COLUMNS = [
 ]
 
 
-def _page_url(page: int) -> str:
+def _page_url(page: int, ciudad: str = "medellin") -> str:
+    query = f"gestion=1&ciudad={_city_id(ciudad)}"
     if page <= 1:
-        return f"{_BASE_URL}?{_QUERY}"
-    return f"{_BASE_URL}pagina/{page}?{_QUERY}"
+        return f"{_BASE_URL}?{query}"
+    return f"{_BASE_URL}pagina/{page}?{query}"
 
 
 def _get_total_pages(html: str) -> int:
@@ -127,7 +150,8 @@ def scrape(ciudad='medellin', sample_only=False, max_pages=None, verbose=False) 
     if sample_only and max_pages is None:
         max_pages = 3
 
-    html = fetch_page(_page_url(1))
+    _city_id(ciudad)
+    html = fetch_page(_page_url(1, ciudad))
     if not html:
         logger.error("Failed to fetch page 1 from Maxibienes")
         return []
@@ -160,7 +184,7 @@ def scrape(ciudad='medellin', sample_only=False, max_pages=None, verbose=False) 
 
     # Pages 2+
     for page in range(2, total_pages + 1):
-        html = fetch_page(_page_url(page))
+        html = fetch_page(_page_url(page, ciudad))
         if not html:
             logger.warning("Failed to fetch page %d, stopping", page)
             break

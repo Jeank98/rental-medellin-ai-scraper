@@ -1,6 +1,7 @@
 # Maxibienes (`MXB`)
 
 - **URL**: `https://www.maxibienes.com/resultados-de-la-busqueda-de-inmueble/?gestion=1&ciudad=5001`
+- **Municipalities** (`ciudad` id): medellin 5001, envigado 5266, itagui 5360, sabaneta 5631, la estrella 5380
 - **Type**: Server-rendered PHP
 - **Listing card**: `.grid-style1 .item`
 - **Listings per page**: 12

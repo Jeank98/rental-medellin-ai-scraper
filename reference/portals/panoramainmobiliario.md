@@ -1,4 +1,5 @@
 # Panorama Inmobiliario
+- **Municipalities** (`id_city`): medellin 496, envigado 291, itagui 389, sabaneta 698, la estrella 416
 
 ## Identity
 

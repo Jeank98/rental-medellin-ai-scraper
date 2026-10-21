@@ -1,6 +1,7 @@
 # La Palma Inmobiliaria (`LPI`)
 
 - **URL**: `https://lapalmainmobiliaria.com.co/s/arriendo`
+- **Municipalities** (`id_city`): medellin 496, envigado 291, itagui 389, sabaneta 698, la estrella 416
 - **Type**: Server-rendered HTML (Wasi)
 - **Portal**: `lapalmainmobiliaria`
 - **Listing cards**: Generic card ancestors around numeric detail links; the parser uses visible labels rather than fixed CSS field selectors
