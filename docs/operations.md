@@ -79,7 +79,10 @@ slug is still unknown). Unverified municipalities raise `UnsupportedCityError`
 instead of silently scraping Medellín.
 
 `scripts/export_to_sheets.py --city medellin` matches exactly, so after a metro
-run either export each city or omit `--city` to mirror every active row.
+run use `--cities medellin,envigado,itagui,sabaneta,la-estrella` to mirror the
+whole metro area in one sheet (it takes precedence over `--city`). Rows whose
+`ciudad` is empty stay out of every city-scoped mirror, so they must be
+re-scraped or repaired before they can appear.
 
 ## Phase and failure matrix
 

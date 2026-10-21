@@ -166,8 +166,11 @@ def build_drive_service():
     return build("drive", "v3", credentials=creds)
 
 
-def fetch_listings(city=None, portal=None):
+def fetch_listings(city=None, portal=None, cities=None):
     """Fetch active listings with optional city and portal filters.
+
+    ``cities`` mirrors several municipalities in one export (for example the
+    Medellín metro area) and takes precedence over the single ``city`` filter.
 
     The export is a live mirror, so inactive rows are never sent to Sheets.
     Rows from older in-memory fixtures that omit ``status`` are treated as
@@ -182,9 +185,11 @@ def fetch_listings(city=None, portal=None):
         if str(r.get("status", "active")).lower() == "active"
     ]
 
-    if city:
-        city_lower = city.lower()
-        all_rows = [r for r in all_rows if r.get("ciudad", "").lower() == city_lower]
+    wanted = [value.strip().lower() for value in (cities or []) if value and value.strip()]
+    if not wanted and city:
+        wanted = [city.strip().lower()]
+    if wanted:
+        all_rows = [r for r in all_rows if str(r.get("ciudad", "")).lower() in wanted]
 
     if portal:
         portal_lower = portal.lower()
@@ -447,6 +452,14 @@ def main():
         help="Custom sheet title (default: 'Rental Listings Export - <timestamp>')",
     )
     parser.add_argument("--city", help="Filter listings by city (case-insensitive)")
+    parser.add_argument(
+        "--cities",
+        help=(
+            "Comma-separated cities to mirror together, e.g. "
+            "medellin,envigado,itagui,sabaneta,la-estrella "
+            "(takes precedence over --city)"
+        ),
+    )
     parser.add_argument("--portal", help="Filter listings by portal (case-insensitive)")
     parser.add_argument(
         "--new",
@@ -459,7 +472,8 @@ def main():
         print("ERROR: Could not connect to database. Check DATABASE_URL in .env")
         sys.exit(1)
 
-    rows = fetch_listings(city=args.city, portal=args.portal)
+    cities = [value.strip() for value in (args.cities or "").split(",") if value.strip()]
+    rows = fetch_listings(city=args.city, portal=args.portal, cities=cities or None)
 
     if not rows:
         print("No listings found in the database.")
