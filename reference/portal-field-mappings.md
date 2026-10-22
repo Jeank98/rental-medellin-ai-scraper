@@ -27,3 +27,7 @@ Discovered field-to-column mappings for each scraped portal. Each portal has its
 | Arango Tobón Inmobiliaria | `ATB` | [arangotobon.md](portals/arangotobon.md) | Two-phase (paginated HTML → detail) | ✅ Implemented |
 | Panorama Inmobiliario | `PAN` | [panoramainmobiliario.md](portals/panoramainmobiliario.md) | Two-phase (Wasi filtered cards → detail) | ✅ Implemented |
 | Portada Inmobiliaria | `POR` | [portadainmobiliaria.md](portals/portadainmobiliaria.md) | REST API | ✅ Implemented |
+| Escala Inmobiliaria | `ESC` | [escalainmobiliaria.md](portals/escalainmobiliaria.md) | REST API | ✅ Implemented |
+| Arrendamientos Envigado | `AEV` | [arrendamientosenvigado.md](portals/arrendamientosenvigado.md) | Sitemap + SSR detail (no `/api/`) | ✅ Implemented |
+| Inmobiliaria La Estrella | `LES` | [inmobiliarialaestrella.md](portals/inmobiliarialaestrella.md) | Two-phase (Livewire load-more → detail) | ✅ Implemented |
+| Lonja Inmobiliaria del Sur | `LJS` | [lonjainmobiliariadelsur.md](portals/lonjainmobiliariadelsur.md) | Two-phase (static paginated cards → detail) | ✅ Implemented |

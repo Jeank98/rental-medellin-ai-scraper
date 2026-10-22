@@ -1,5 +1,5 @@
 """
-Orchestrator module — 5-phase pipeline for scraping all 21 Colombian real
+Orchestrator module — 5-phase pipeline for scraping all 25 Colombian real
 estate portals in parallel with health checks, validation, and DB backup.
 """
 
@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Literal, TypedDict
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
+from psycopg2.extensions import parse_dsn
+
 from scrape.report import compact_console_text, generate_report
 from scrape.process_runner import run_with_retries
 from scrape.run_report import write_json_report
@@ -21,6 +23,42 @@ RETRY_DELAY_SECONDS = 5.0
 SHEET_TIMEOUT_SECONDS = 900
 BACKUP_PREFIX = "rental_scraper_"
 BACKUP_RETENTION = 3
+_PG_CONNECTION_ENV = {
+    "host": "PGHOST",
+    "hostaddr": "PGHOSTADDR",
+    "port": "PGPORT",
+    "dbname": "PGDATABASE",
+    "user": "PGUSER",
+    "password": "PGPASSWORD",
+    "passfile": "PGPASSFILE",
+    "service": "PGSERVICE",
+    "options": "PGOPTIONS",
+    "application_name": "PGAPPNAME",
+    "connect_timeout": "PGCONNECT_TIMEOUT",
+    "client_encoding": "PGCLIENTENCODING",
+    "sslmode": "PGSSLMODE",
+    "sslnegotiation": "PGSSLNEGOTIATION",
+    "sslcompression": "PGSSLCOMPRESSION",
+    "sslcert": "PGSSLCERT",
+    "sslkey": "PGSSLKEY",
+    "sslcertmode": "PGSSLCERTMODE",
+    "sslrootcert": "PGSSLROOTCERT",
+    "sslcrl": "PGSSLCRL",
+    "sslcrldir": "PGSSLCRLDIR",
+    "sslsni": "PGSSLSNI",
+    "ssl_min_protocol_version": "PGSSLMINPROTOCOLVERSION",
+    "ssl_max_protocol_version": "PGSSLMAXPROTOCOLVERSION",
+    "requirepeer": "PGREQUIREPEER",
+    "require_auth": "PGREQUIREAUTH",
+    "gssencmode": "PGGSSENCMODE",
+    "krbsrvname": "PGKRBSRVNAME",
+    "gsslib": "PGGSSLIB",
+    "gssdelegation": "PGGSSDELEGATION",
+    "target_session_attrs": "PGTARGETSESSIONATTRS",
+    "load_balance_hosts": "PGLOADBALANCEHOSTS",
+    "min_protocol_version": "PGMINPROTOCOLVERSION",
+    "max_protocol_version": "PGMAXPROTOCOLVERSION",
+}
 
 PORTALS = {
     "accrecer": {"module": "accrecer"},
@@ -62,6 +100,10 @@ PORTALS = {
         "reuse_unchanged_details": True,
     },
     "zitios": {"module": "zitios", "reuse_unchanged_details": True},
+    "escalainmobiliaria": {"module": "escalainmobiliaria"},
+    "arrendamientosenvigado": {"module": "arrendamientosenvigado"},
+    "inmobiliarialaestrella": {"module": "inmobiliarialaestrella"},
+    "lonjainmobiliariadelsur": {"module": "lonjainmobiliariadelsur"},
 }
 
 def _script_name(portal: str) -> str:
@@ -419,6 +461,20 @@ def _clean_db_url(url: str) -> str:
     return urlunparse(clean)
 
 
+def _pg_dump_env(url: str) -> dict[str, str]:
+    """Route libpq with explicit environment fields, never a URI in argv."""
+    parameters = parse_dsn(_clean_db_url(url))
+    if parameters.keys() - _PG_CONNECTION_ENV.keys():
+        # Do not silently discard connection or TLS options without an
+        # environment equivalent; refusing a backup is safer than weakening it.
+        raise ValueError("unsupported backup connection option")
+    environment = os.environ.copy()
+    environment.update(
+        (_PG_CONNECTION_ENV[key], value) for key, value in parameters.items()
+    )
+    return environment
+
+
 def _fmt_time(seconds: float) -> str:
     """Format seconds as human-readable string."""
     if seconds < 60:
@@ -446,6 +502,26 @@ def _coerce_backup_outcome(
     if isinstance(value, str) and value:
         return _backup_outcome("success", path=value, reason=default_reason)
     return _backup_outcome("skipped", reason=default_reason)
+
+
+def _pg_dump_error(error: Exception) -> str:
+    """Render a pg_dump failure without echoing the connection URI.
+
+    ``CalledProcessError`` embeds its command list, and ``TimeoutExpired`` can
+    embed captured output.  ``urlparse`` raises ``ValueError`` messages that
+    quote the whole netloc, credentials included.  Every branch is rebuilt
+    from type/exit state only so a connection string can never reach the
+    console or the JSON report.
+    """
+    if isinstance(error, subprocess.CalledProcessError):
+        return f"pg_dump failed with exit code {error.returncode}"
+    if isinstance(error, subprocess.TimeoutExpired):
+        return f"pg_dump timed out after {error.timeout:g}s"
+    if isinstance(error, ValueError):
+        return "DATABASE_URL is invalid or uses unsupported backup connection options"
+    if isinstance(error, OSError):
+        return f"pg_dump could not run: {error.strerror or type(error).__name__}"
+    return f"pg_dump failed ({type(error).__name__})"
 
 
 def _prune_old_backups(
@@ -489,6 +565,10 @@ def backup_db(
     ``path`` is the completed backup path on success and the attempted path on
     a command failure when it could be known.  Missing ``DATABASE_URL`` is an
     intentional skip, while a failed ``pg_dump`` is a required-backup failure.
+
+    Connection fields are passed through libpq's ``PGHOST``/``PGUSER``/
+    ``PGPASSWORD``/``PGDATABASE`` environment variables, never command
+    arguments. ``PGDATABASE`` alone does not expand a connection URI.
     """
     db_url = os.environ.get("DATABASE_URL")
     if not db_url:
@@ -505,7 +585,7 @@ def backup_db(
 
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         dump_file = backup_path / f"{BACKUP_PREFIX}{timestamp}.sql"
-        clean_url = _clean_db_url(db_url)
+        dump_env = _pg_dump_env(db_url)
 
         if verbose:
             print(f"\n{'='*50}")
@@ -513,11 +593,12 @@ def backup_db(
             print(f"{'='*50}")
 
         subprocess.run(
-            ["pg_dump", clean_url, "--no-owner", "--no-acl", "-f", str(dump_file)],
+            ["pg_dump", "--no-owner", "--no-acl", "-f", str(dump_file)],
             capture_output=True,
             text=True,
             timeout=300,
             check=True,
+            env=dump_env,
         )
         file_size = dump_file.stat().st_size
         if verbose:
@@ -526,21 +607,31 @@ def backup_db(
         if verbose:
             print()
         return _backup_outcome("success", path=str(dump_file))
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as error:
+    except Exception as error:
+        # This boundary is total on purpose: every failure mode here (pg_dump,
+        # timeout, filesystem, URL parsing) can carry the connection URI in
+        # ``str(error)``, so only the sanitized renderer is persisted.
+        error_message = _pg_dump_error(error)
         if verbose:
-            print(f"  ❌ Backup FAILED — {error}\n")
+            print(f"  ❌ Backup FAILED — {error_message}\n")
         return _backup_outcome(
             "failed",
             path=str(dump_file) if dump_file else None,
-            error=str(error),
+            error=error_message,
             reason="pg_dump_failed",
         )
 
 
-def export_to_sheets(ciudad: str = "medellin", verbose: bool = True) -> dict:
-    """Mirror the current DB state to Sheets after portal writes complete."""
+def export_to_sheets(verbose: bool = True) -> dict:
+    """Mirror the complete active DB state to Sheets after portal writes.
+
+    The shared spreadsheet is the live mirror of every active ``portal+city``
+    snapshot, so this path never passes a city or portal filter: narrowing the
+    export to one municipality would silently drop the other cities from the
+    mirror.
+    """
     result = run_with_retries(
-        ["uv", "run", "python", "scripts/export_to_sheets.py", "--city", ciudad],
+        ["uv", "run", "python", "scripts/export_to_sheets.py"],
         timeout=SHEET_TIMEOUT_SECONDS,
         max_attempts=1,
     )
@@ -672,7 +763,7 @@ def run_pipeline(
             "attempts": 0, "elapsed": 0.0, "error": None,
         }
     else:
-        sheet_result = export_to_sheets(ciudad)
+        sheet_result = export_to_sheets()
 
     if not sheet_result["success"]:
         validation["warnings"].append(
