@@ -1,7 +1,7 @@
 """Fetcher wrappers — Scrapling Python API with retry logic.
 
 Provides fetch_page(), fetch_json(), and bulk_fetch() with exponential
-backoff retries for all 21 Colombian real estate portal scrapers.
+backoff retries for all configured Colombian real estate portal scrapers.
 
 Uses scrapling.Fetcher for server-rendered pages and REST APIs,
 and scrapling.StealthyFetcher for browser-backed rendering or interaction

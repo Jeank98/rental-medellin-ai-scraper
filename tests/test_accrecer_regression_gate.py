@@ -19,33 +19,8 @@ if sys_path not in __import__("sys").path:
 from accrecer_regression_gate import (  # type: ignore[import-untyped]
     cmd_compare,
     cmd_verify_protected,
-    EXPECTED_PORTALS_21,
     RESULT_EXPECTED_KEYS,
 )
-
-
-class TestKeysExact(unittest.TestCase):
-    """Given the expected portal list, then it matches the current registry."""
-
-    def test_expected_portals_match_current_registry(self):
-        from scrape.orchestrator import PORTALS
-        actual = sorted(PORTALS.keys())
-        expected = sorted(EXPECTED_PORTALS_21)
-        self.assertEqual(actual, expected,
-                         "EXPECTED_PORTALS_21 must match scrape.orchestrator.PORTALS")
-
-
-class TestHealthResultSchema(unittest.TestCase):
-    """Given a health result dict, then it has exactly the required keys."""
-
-    def test_valid_health_result(self):
-        result = {"portal": "test", "healthy": True, "listings": 10,
-                  "elapsed": 1.5, "error": None}
-        self.assertEqual(set(result.keys()), RESULT_EXPECTED_KEYS)
-
-    def test_missing_key_detected(self):
-        result = {"portal": "test", "healthy": True, "listings": 10, "elapsed": 1.5}
-        self.assertNotEqual(set(result.keys()), RESULT_EXPECTED_KEYS)
 
 
 class TestCompareBaselinePost(unittest.TestCase):

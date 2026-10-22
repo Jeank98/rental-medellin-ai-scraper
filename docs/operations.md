@@ -10,12 +10,16 @@ mappings in `reference/portals/`.
 ```bash
 uv sync
 uv run python scripts/check_runtime.py
+uv run python -m patchright install chromium
 uv run python scripts/run_all.py --workers 4 --ciudad medellin
 ```
 
 Inspect the printed report and the newest JSON file under
 `runtime/scraper-runs/` before sharing the Sheets URL. The runtime check only
 imports dependencies; it does not read `.env` or contact a service.
+
+La Estrella requires the Chromium installed above. Provision it once per user
+cache; fresh worktrees reuse that cache.
 
 ## Normal and fail-fast runs
 
@@ -30,6 +34,47 @@ imports dependencies; it does not read `.env` or contact a service.
 Add `--ciudad CITY` for another city and `--report-dir DIR` to choose a report
 location. Use a per-portal script with `--sample-only` for a bounded diagnostic;
 sample mode never writes CSV, DB, or Sheets.
+
+## Selected southern-portal production run
+
+Use the selected runner when publishing the four southern portals for all five
+cities:
+
+```bash
+uv run python scripts/run_selected.py --portals escalainmobiliaria arrendamientosenvigado inmobiliarialaestrella lonjainmobiliariadelsur --cities medellin envigado itagui la-estrella sabaneta
+```
+
+The defaults are all four portals and all five cities, so
+`uv run python scripts/run_selected.py` performs the same full run. `--cities`
+accepts canonical keys or accented/aliased labels. La Estrella is stored under
+the existing `la-estrella` scope; `'la estrella'`, `La Estrella`, and
+`La-Estrella` must resolve to that key rather than create a second city scope.
+
+Prove the scope with `--sample-only` first:
+
+```bash
+uv run python scripts/run_selected.py --cities medellin envigado itagui la-estrella sabaneta --sample-only
+```
+
+The runner collects every requested portal and city first, requires a
+successful `pg_dump` backup, writes each portal+city scope atomically, then
+refreshes the shared Sheets mirror. It has no `--skip-backup`. Sample mode reads
+no credentials, takes no backup, and writes no CSV, database, or Sheets output;
+`--max-pages` is accepted only with `--sample-only` and is rejected before any
+scrape in full mode. A capped collection is therefore never a production
+snapshot.
+
+Requested cities remain distinct canonical DB scopes. Each record is grouped by
+the portal's authoritative source municipality, never relabelled to another
+requested city, and details are discovered once per portal and shared across
+cities. A requested city with no inventory is skipped rather than replacing its
+existing snapshot; the report marks that portal+city scope empty. A malformed,
+challenged, or failed listing/detail response raises instead of publishing a
+partial snapshot.
+
+Do not start DB writes or the Sheets export when any selected portal or city
+failed, or when any collection was capped. The runner enforces the backup gate;
+the operator still verifies the sample report before the full run.
 
 ## Price-stable detail reuse
 
@@ -115,12 +160,22 @@ portals.
 
 ## Sheets and OAuth recovery
 
-Sheets is a live mirror of the database's **active** rows only. The export also
-requires the requested city (case-insensitive), `precio >= 200000`, and an
-allowed residential `tipo` (`apartamento`, `apto`, `apartaestudio`, `casa`,
-`casa-finca`, or `casa unifamiliar`). `unavailable` rows are current search
-cards whose detail page explicitly reports that no property exists; `inactive`
-rows are absent from a completed source snapshot. Neither is exported.
+The shared spreadsheet is an unfiltered mirror of the database's **active**
+rows: every city and every portal, not just the city or portals touched by the
+latest run. This is deliberate. A Medellín-only run must not delete Envigado,
+Itagüí, La Estrella, or Sabaneta rows from the shared sheet. The mirror also
+applies `precio >= 200000` and an allowed residential `tipo` (`apartamento`,
+`apto`, `apartaestudio`, `casa`, `casa-finca`, or `casa unifamiliar`).
+`unavailable` rows are current search cards whose detail page explicitly reports
+that no property exists; `inactive` rows are absent from a completed source
+snapshot. Neither is exported.
+
+`scripts/export_to_sheets.py` still accepts `--city` and `--portal` for a
+standalone filtered export. That filter is unsafe against the shared
+`GOOGLE_SHEET_ID` mirror if you intend to preserve other cities or portals,
+because it replaces the sheet contents with the filtered subset. Use `--new` (or
+a separate sheet) for filtered exports; leave the shared mirror to the pipeline
+and selected runner, which always export unfiltered.
 
 If OAuth fails, confirm `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` without
 printing their values, then remove or re-authorize the token at

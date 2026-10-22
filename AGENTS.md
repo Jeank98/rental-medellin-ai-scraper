@@ -1,6 +1,6 @@
 # AGENTS.md — Rental Medellín AI Scraper
 
-This project is a **knowledge base + tooling** for scraping real estate rental listings from Colombian portals. It provides 21 per-portal executable Python scripts (powered by a shared `scrape/` package), plus AI-agent reference documentation for portal discovery and field mapping.
+This project is a **knowledge base + tooling** for scraping real estate rental listings from Colombian portals. It provides 25 per-portal executable Python scripts (powered by a shared `scrape/` package), plus AI-agent reference documentation for portal discovery and field mapping.
 
 ## Environment setup
 From the project root, provision the project environment before any health
@@ -18,6 +18,14 @@ worktree.
 The runtime check imports Scrapling, its `curl_cffi` transport, DB, HTML, browser,
 and Google Sheets dependencies, plus the shared `scrape` package import chain,
 without reading `.env` or contacting a service. Agents MUST run it before health checks.
+
+La Estrella's Livewire discovery runs through Patchright. After the runtime
+check, provision its Chrome for Testing build once per user cache; a fresh
+worktree reuses that cache:
+
+```bash
+uv run python -m patchright install chromium
+```
 
 ## Repository GitHub identity
 
@@ -42,21 +50,22 @@ the personal SSH key. Agents MUST NOT change global Git or GitHub CLI settings.
 Scrape rental property listings from any Colombian real estate portal, extract standardized fields, and output listings as a typed CSV or to a PostgreSQL database. **Scripts are the PRIMARY production path** — the agentic workflow exists as a fallback and for documenting new portal structures.
 
 ### Production: scripts first, agents second
-All 21 portals have standalone executable scripts at `scripts/scrape_{portal}.py`. These call into a shared `scrape/{portal}.py` module and use `scrape/cli.py` for standardized CLI behavior (`--output csv|db|both`, `--ciudad`, `--sample-only`, `--max-pages`, `--verbose`).
+All 25 portals have standalone executable scripts at `scripts/scrape_{portal}.py`. These call into a shared `scrape/{portal}.py` module and use `scrape/cli.py` for standardized CLI behavior (`--output csv|db|both`, `--ciudad`, `--sample-only`, `--max-pages`, `--verbose`).
 
 **When a portal has a working script, ALWAYS use the script.** The agentic workflow (Scrapling MCP tools + agent reasoning) is reserved for:
 - Discovering a brand-new portal not yet in the codebase
 - Debugging a script that broke after a site redesign
 - Updating field mappings in `reference/portals/{name}.md`
 
-### Strategy types (21 portals)
+### Strategy types (25 portals)
 
 | Strategy | Count | Portals |
 |---|---|---|
-| REST API | 2 | ADN (Arrendamientos del Norte), Portada Inmobiliaria |
+| REST API | 3 | ADN (Arrendamientos del Norte), Portada Inmobiliaria, Escala Inmobiliaria |
 | GraphQL | 1 | Coninsa |
 | Single-phase HTML | 7 | Maxibienes, AlbertoAlvarez, MerinoHermanos, Habitamos, Metrocasas, Acrecer, Total Bienes |
-| Two-phase HTML | 10 | SantaFe, Santillana, Alnago, Monserrate, El Castillo, La Palma, Proser Inmobiliaria, Zitios, Arango Tobón, Panorama Inmobiliario |
+| Two-phase HTML | 12 | SantaFe, Santillana, Alnago, Monserrate, El Castillo, La Palma, Proser Inmobiliaria, Zitios, Arango Tobón, Panorama Inmobiliario, La Estrella (Livewire load-more), Lonja Inmobiliaria del Sur (static cards) |
+| Sitemap + SSR detail | 1 | Arrendamientos Envigado |
 | Load More (JS) | 1 | VillaCruz |
 
 **Per-portal ID formats** (each portal uses its own ID scheme):
@@ -83,6 +92,10 @@ All 21 portals have standalone executable scripts at `scripts/scrape_{portal}.py
 | Arango Tobón | ATB | ATB-{numeric} | ATB-4571 |
 | Panorama Inmobiliario | PAN | PAN-{numeric} | PAN-8170174 |
 | Portada Inmobiliaria | POR | POR-{complete-code} | POR-679-78592 |
+| Escala Inmobiliaria | ESC | ESC-{codigo} | ESC-<codigo> |
+| Arrendamientos Envigado | AEV | AEV-{code} | AEV-78871 |
+| Inmobiliaria La Estrella | LES | LES-{numeric} | LES-9564 |
+| Lonja Inmobiliaria del Sur | LJS | LJS-{numeric} | LJS-4009 |
 
 ### Key files
 | File | Purpose |
@@ -92,12 +105,14 @@ All 21 portals have standalone executable scripts at `scripts/scrape_{portal}.py
 | `uv.lock` | Locked dependency resolution used by `uv sync` and `uv run` |
 | `scripts/check_runtime.py` | Import smoke check for all runtime dependency groups |
 | **Scripts (primary production path)** | |
-| `scripts/run_all.py` | Orchestrator: runs all 21 scrapers with health check → DB backup → parallel scrape → validation → report |
-| `scripts/scrape_{portal}.py` × 21 | Per-portal CLI entry points (thin wrappers calling `scrape/{portal}.py`) |
+| `scripts/run_all.py` | Orchestrator: runs all 25 scrapers with health check → DB backup → parallel scrape → validation → report |
+| `scripts/run_selected.py` | Collects selected portals across selected cities, then backs up and writes per portal+city |
+| `scripts/scrape_{portal}.py` × 25 | Per-portal CLI entry points (thin wrappers calling `scrape/{portal}.py`) |
 | `scrape/orchestrator.py` | Pipeline logic: health checks, parallel execution, backup, reporting |
 | `scrape/report.py` | Report formatting for the orchestrator |
 | `scrape/cli.py` | Shared CLI factory (`create_parser` / `run_scraper`) for all portal scripts |
-| `scrape/{portal}.py` × 21 | Per-portal scraper logic (extraction, pagination, normalization) |
+| `scrape/cities.py` | Canonical city labels, `normalize_city`, and `resolve_city` for multi-city runs |
+| `scrape/{portal}.py` × 25 | Per-portal scraper logic (extraction, pagination, normalization) |
 | `scrape/accrecer.py` | Acrecer scraper (single-phase RSC, no detail pages) |
 | `scripts/scrape_accrecer.py` | Acrecer CLI entry point |
 | `scrape/proserinmobiliaria.py` | Proser scraper (two-phase HTML, canonical Medellín rental query) |
@@ -113,6 +128,14 @@ All 21 portals have standalone executable scripts at `scripts/scrape_{portal}.py
 | `scripts/scrape_panoramainmobiliario.py` | Panorama CLI entry point |
 | `scrape/portadainmobiliaria.py` | Portada scraper (single-phase REST API, no detail pages) |
 | `scripts/scrape_portadainmobiliaria.py` | Portada CLI entry point |
+| `scrape/escalainmobiliaria.py` | Escala scraper (REST API; numeric city/type filters, local rental guard) |
+| `scripts/scrape_escalainmobiliaria.py` | Escala CLI entry point |
+| `scrape/arrendamientosenvigado.py` | Envigado scraper (sitemap discovery → SSR detail; no /api/ calls) |
+| `scripts/scrape_arrendamientosenvigado.py` | Envigado CLI entry point |
+| `scrape/inmobiliarialaestrella.py` | La Estrella scraper (Livewire load-more discovery → JSON-LD detail) |
+| `scripts/scrape_inmobiliarialaestrella.py` | La Estrella CLI entry point |
+| `scrape/lonjainmobiliariadelsur.py` | Lonja scraper (static paginated cards → detail table) |
+| `scripts/scrape_lonjainmobiliariadelsur.py` | Lonja CLI entry point |
 
 | `scrape/fetcher.py` | HTTP fetch utilities (requests, aiohttp, Scrapling, Playwright) |
 | `scrape/normalize.py` | Normalization functions (precio, tipo, estrato, garaje, barrio, URL) |
@@ -140,11 +163,11 @@ short production path is:
 ```
 uv sync
 uv run python scripts/check_runtime.py
-uv run python scripts/run_all.py --workers 21
+uv run python scripts/run_all.py --workers 25
 ```
 
 Options:
-- `--workers N` — concurrent scrapers (default 4, max 21 for full parallel)
+- `--workers N` — concurrent scrapers (default 4, max 25 for full parallel)
 - `--ciudad` — city filter (default `medellin`)
 - `--skip-backup` — explicitly skip pg_dump before scraping
 - `--skip-health` — skip health check (run all scrapers regardless)
@@ -155,14 +178,47 @@ Options:
 
 The orchestrator retries technical health-check and full-scrape failures once.
 Each portal DB replacement is atomic; a failed write returns a non-zero status
-and preserves the previous portal snapshot. Sheets is a live mirror of active
-rows matching city, minimum price, and allowed property type filters. A failed
-required backup blocks scraper and Sheets writes; `--skip-backup` is recorded as
-an intentional skip.
+and preserves the previous portal snapshot. The shared Sheets mirror is
+unfiltered: it exports every active DB row across all cities and portals, so a
+Medellín-only run must not remove Envigado, Itagüí, La Estrella, or Sabaneta
+rows. A failed required backup blocks scraper and Sheets writes; `--skip-backup`
+is recorded as an intentional skip.
 
 With `--fail-fast`, a health-check failure aborts before backup and scraping. A
 scrape failure stops new scrapers and skips Sheets. Only jobs already running
 when the failure is observed may finish; no new jobs start afterward.
+
+### Running selected portals across the five southern cities
+
+Use `scripts/run_selected.py` for the four southern portals instead of
+`run_all.py`:
+
+```bash
+uv run python scripts/run_selected.py --portals escalainmobiliaria arrendamientosenvigado inmobiliarialaestrella lonjainmobiliariadelsur --cities medellin envigado itagui la-estrella sabaneta
+```
+
+Defaults are all four portals and all five cities, so the same full run is
+`uv run python scripts/run_selected.py`. `--cities` accepts canonical keys or
+accented/aliased labels. La Estrella's canonical scope is `la-estrella`;
+`'la estrella'`, `La Estrella`, and `La-Estrella` resolve to it and must never
+create a second city scope. The runner collects every requested portal and city
+first, requires a successful backup, writes each portal+city scope atomically,
+then refreshes the unfiltered shared Sheets mirror. It retains no `--skip-backup`
+flag.
+
+Always prove the scope with `--sample-only` before the full run:
+
+```bash
+uv run python scripts/run_selected.py --cities medellin envigado itagui la-estrella sabaneta --sample-only
+```
+
+Sample mode reads no credentials, takes no backup, and writes no CSV, database,
+or Sheets output. It is the supported way to test a capped `--max-pages` run;
+full mode rejects `--max-pages` before scraping. A source city mismatch must
+never be relabelled as Medellín: rows are grouped under the portal's
+authoritative municipality, and a requested city without inventory is skipped
+so its existing snapshot is preserved. Details are discovered once per portal
+and shared across the requested cities.
 
 ### Troubleshooting missing imports
 

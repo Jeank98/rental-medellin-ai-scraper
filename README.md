@@ -12,21 +12,38 @@ uv sync
 uv run python scripts/check_runtime.py
 ```
 
+La Estrella discovers listings through a browser-rendered Livewire page. After
+the runtime check, provision its Chrome for Testing build once per user cache
+(a fresh worktree reuses the cache):
+
+```bash
+uv run python -m patchright install chromium
+```
+
 Use `uv run` for every Python command below. It selects the project environment
 and can recreate it from `pyproject.toml` and `uv.lock` in a fresh worktree.
 
 ## Quick Start
 
 ```bash
-# Run all 21 portals at once:
-uv run python scripts/run_all.py --workers 21
+# Run all 25 portals at once:
+uv run python scripts/run_all.py --workers 25
 
 # Run a single portal:
 uv run python scripts/scrape_maxibienes.py --output db
 
 # Skip the health check and scrape all portals:
 uv run python scripts/run_all.py --skip-health --workers 12
+
+# Run only the four southern portals for all five cities:
+uv run python scripts/run_selected.py --portals escalainmobiliaria arrendamientosenvigado inmobiliarialaestrella lonjainmobiliariadelsur --cities medellin envigado itagui la-estrella sabaneta
 ```
+
+The selected run replaces DB rows only for the requested portal and canonical
+city pairs. Each source municipality stays in its own scope (never relabelled
+as Medellín), and each portal discovers details once for all requested cities.
+Verify each portal and city with `--sample-only` before the full run; sample
+mode writes no CSV, database, or Sheets output.
 
 
 ### Setup
@@ -131,6 +148,7 @@ rental-medellin-ai-scraper/
 ├── uv.lock                           # Locked dependency resolution
 ├── scrape/                          # Shared scraper package
 │   ├── __init__.py                  # Re-exports: fetcher, normalize, validate, writers
+│   ├── cities.py                    # Canonical city labels, normalize_city, resolve_city
 │   ├── cli.py                       # Shared CLI argument parser + run_scraper helper
 │   ├── fetcher.py                   # fetch_page, fetch_json, bulk_fetch via Scrapling
 │   ├── normalize.py                 # Field normalizers (price, tipo, estrato, barrio, etc.)
@@ -159,9 +177,14 @@ rental-medellin-ai-scraper/
 │   ├── totalbienes.py               # TB scraper (single-phase numbered HTML)
 │   ├── arangotobon.py               # ATB scraper (two-phase HTML)
 │   ├── panoramainmobiliario.py      # PAN scraper (two-phase Wasi HTML)
-│   └── portadainmobiliaria.py       # POR scraper (REST API)
+│   ├── portadainmobiliaria.py       # POR scraper (REST API)
+│   ├── escalainmobiliaria.py        # ESC scraper (REST API)
+│   ├── arrendamientosenvigado.py    # AEV scraper (sitemap + SSR detail)
+│   ├── inmobiliarialaestrella.py    # LES scraper (Livewire load-more → detail)
+│   └── lonjainmobiliariadelsur.py   # LJS scraper (static paginated cards → detail)
 ├── scripts/                         # Thin CLI entry points
-│   ├── run_all.py                   # Orchestrator: runs all 21 portals in parallel
+│   ├── run_all.py                   # Orchestrator: runs all 25 portals in parallel
+│   ├── run_selected.py              # Run selected portals across selected cities
 │   ├── check_runtime.py              # Import smoke check for runtime dependencies
 │   ├── scrape_maxibienes.py
 │   ├── scrape_albertoalvarez.py
@@ -184,6 +207,10 @@ rental-medellin-ai-scraper/
 │   ├── scrape_arangotobon.py
 │   ├── scrape_panoramainmobiliario.py
 │   ├── scrape_portadainmobiliaria.py
+│   ├── scrape_escalainmobiliaria.py
+│   ├── scrape_arrendamientosenvigado.py
+│   ├── scrape_inmobiliarialaestrella.py
+│   ├── scrape_lonjainmobiliariadelsur.py
 │   ├── setup_db.py                  # Create listings table
 │   ├── test_save.py                 # Test insert and read-back
 │   ├── insert_listings.py           # Bulk insert from JSON
@@ -202,7 +229,7 @@ rental-medellin-ai-scraper/
 │   └── scrapling-mcp-setup.md       # Scrapling MCP setup guide
 ├── reference/
 │   ├── portal-field-mappings.md      # Index of all portal mappings
-│   └── portals/                      # Individual portal files (21 portals)
+│   └── portals/                      # Individual portal files (25 portals)
 ```
 
 ## Output Columns
@@ -259,6 +286,22 @@ and recovery semantics.
 | 19 | Arango Tobón Inmobiliaria | `ATB` | Two-phase (paginated HTML → detail) | `scrape_arangotobon.py` |
 | 20 | Panorama Inmobiliario | `PAN` | Two-phase (Wasi filtered cards → detail) | `scrape_panoramainmobiliario.py` |
 | 21 | Portada Inmobiliaria | `POR` | REST API | `scrape_portadainmobiliaria.py` |
+| 22 | Escala Inmobiliaria | `ESC` | REST API | `scrape_escalainmobiliaria.py` |
+| 23 | Arrendamientos Envigado | `AEV` | Sitemap discovery → SSR detail | `scrape_arrendamientosenvigado.py` |
+| 24 | Inmobiliaria La Estrella | `LES` | Two-phase (Livewire load-more → detail) | `scrape_inmobiliarialaestrella.py` |
+| 25 | Lonja Inmobiliaria del Sur | `LJS` | Two-phase (static paginated cards → detail) | `scrape_lonjainmobiliariadelsur.py` |
+
+Southern-portal notes:
+
+- Envigado's robots file disallows `/api/`, so its adapter uses sitemap
+  discovery plus server-rendered detail pages. Sitemap entries are candidates,
+  not proof of live completeness.
+- La Estrella's Livewire paging and city facets are not reliable for scope;
+  discovery loads the residential types and groups each property by its detail
+  page municipality. Its browser discovery needs the Patchright Chromium above.
+- These portals sometimes omit parking or neighborhood values. Missing parking
+  is stored as `0` and unknown barrio as an empty string; neither is inferred
+  from prose, visitor amenities, or the building complex name.
 
 ## Requirements
 
@@ -267,6 +310,7 @@ and recovery semantics.
 - **pg_dump** (in `$PATH`) for automated DB backups via `run_all.py`
 - **Scrapling MCP** (Docker or Python) for page fetching
 - **Chromium/Chrome** for StealthyFetcher portals (Villa Cruz, El Castillo, Metrocasas)
+- **Patchright Chromium** for La Estrella's Livewire discovery (`uv run python -m patchright install chromium`)
 
 ## Orchestrator Output
 

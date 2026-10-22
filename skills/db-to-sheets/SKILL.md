@@ -19,18 +19,28 @@ filtered rows with formatting.
 - `status == active` — inactive/delisted history stays in PostgreSQL but is
   never copied to the live mirror (legacy in-memory rows missing `status` are
   treated as active)
-- requested city, case-insensitively
 - `precio >= 200.000 COP` — excludes placeholder/error listings
 - `tipo IN (apartamento, apto, apartaestudio, casa, casa-finca, casa unifamiliar)` —
   excludes commercial, lots, and offices
+
+The shared mirror (`GOOGLE_SHEET_ID`) is **unfiltered by city and portal**:
+eligible active rows from every municipality and portal are included, subject
+to the price and property-type filters above. A Medellín-only run must retain
+the other municipalities. `--city` and
+`--portal` remain available for standalone filtered exports, but they replace
+the target sheet's contents; use `--new` (or a separate sheet) when the filtered
+export must coexist with the shared mirror.
 
 Exported columns are the 14-column DB shape: the canonical 11 listing fields
 plus `ciudad`, `status`, and `scraped_at`. CSV output remains a separate
 11-column format; see `docs/columns-spec.md`.
 
 > **Run after a full scrape**: the spreadsheet is fed from PostgreSQL, so
-> export after a complete scrape (e.g. `scripts/run_all.py`), not from a capped
-> `--sample-only` CSV.
+> export after a complete scrape, not a capped collection. The selected runner
+> skips Sheets on any failure. `scripts/run_all.py --fail-fast` skips Sheets
+> after a scraper failure; normal `run_all.py` mode may export after healthy
+> portals finish despite another portal failing. Both runners block publication
+> when a required backup fails.
 
 The script can operate in two modes:
 
@@ -87,13 +97,17 @@ uv run python scripts/export_to_sheets.py --new
 uv run python scripts/export_to_sheets.py --city medellin
 ```
 
+This is a standalone filtered export. If `GOOGLE_SHEET_ID` points at the shared
+mirror, add `--new` so other cities are not dropped from the shared sheet.
+
 ### Filter by portal
 
 ```bash
 uv run python scripts/export_to_sheets.py --portal maxibienes
 ```
 
-`--portal accrecer` exports only Acrecer's rows.
+`--portal accrecer` exports only Acrecer's rows. The same shared-mirror warning
+applies: use `--new` for a filtered standalone sheet.
 
 ### Custom sheet title
 
@@ -112,10 +126,15 @@ uv run python scripts/export_to_sheets.py --city medellin --portal maxibienes --
 
 1. Script loads `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` from `.env`
 2. On **first run**, opens a browser for OAuth consent. Token is saved to `~/.config/gworkspace-tools/token.json`. Subsequent runs reuse the saved token (including refresh).
-3. Reads PostgreSQL listings and applies the active-status, city, price, and property-type filters described above
+3. Reads PostgreSQL listings and applies the active-status, price, and
+   property-type filters described above, plus `--city`/`--portal` only when
+   explicitly requested for a standalone export
 4. **If `GOOGLE_SHEET_ID` is set** (and `--new` not passed):
    - Clears ALL content from the existing sheet
    - Rewrites the current active data with headers
+   - With no `--city`/`--portal` filters this preserves every active city; with
+     a filter it replaces the shared mirror with that subset, so use `--new`
+     unless you intend that replacement
    - Re-applies formatting (bold header, frozen row, column widths)
    - Deletes any extra sheets beyond the first one
    - The sheet URL stays the same — no new link to share
@@ -162,6 +181,8 @@ When a user asks to export to Google Sheets:
    ```bash
    uv run python scripts/export_to_sheets.py [--city CITY] [--portal PORTAL] [--title TITLE] [--new]
    ```
+   Leave the shared mirror unfiltered unless the user explicitly wants that
+   subset to replace it; prefer `--new` for filtered exports.
 4. Report the sheet URL to the user
 5. If a new sheet was created, remind the user to add `GOOGLE_SHEET_ID` to `.env` for in-place updates on future runs
 

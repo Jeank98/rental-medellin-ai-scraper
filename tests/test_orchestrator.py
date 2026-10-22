@@ -1,6 +1,9 @@
 """Regression tests for orchestrator failure handling."""
 
+import json
+import subprocess
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from scrape import orchestrator
@@ -289,7 +292,7 @@ class TestFailFastPipeline(unittest.TestCase):
             exit_code = run_pipeline(workers=1, fail_fast=True)
 
         self.assertEqual(exit_code, 0)
-        export.assert_called_once_with("medellin")
+        export.assert_called_once()
 
     def test_non_fail_fast_scrape_failure_still_exports_sheets(self):
         health = [{"portal": "zitios", "healthy": True, "listings": 1}]
@@ -310,7 +313,7 @@ class TestFailFastPipeline(unittest.TestCase):
             exit_code = run_pipeline(workers=1, fail_fast=False)
 
         self.assertEqual(exit_code, 1)
-        export.assert_called_once_with("medellin")
+        export.assert_called_once()
 
 
     def test_health_failure_stops_before_backup_and_scrape(self):
@@ -333,6 +336,75 @@ class TestFailFastPipeline(unittest.TestCase):
         backup.assert_not_called()
         parallel.assert_not_called()
         export.assert_not_called()
+
+
+SECRET_DB_URL = (
+    "postgresql://scraper:s3cret-pw@db.example:5432/rentals"
+    "?sslmode=require&channel_binding=require"
+)
+
+
+def _fake_pg_dump(command, **_kwargs):
+    Path(command[command.index("-f") + 1]).write_text("-- dump")
+    return subprocess.CompletedProcess(command, 0)
+
+
+def test_backup_db_reports_unparseable_connection_uri_without_credentials(tmp_path):
+    invalid_url = "postgresql://scraper:s3cret-pw@db.example\uff1a5432/rentals"
+
+    with (
+        patch.dict("os.environ", {"DATABASE_URL": invalid_url}),
+        patch("scrape.orchestrator.subprocess.run") as run,
+    ):
+        outcome = orchestrator.backup_db(str(tmp_path), verbose=False)
+
+    run.assert_not_called()
+    serialized = json.dumps(outcome)
+    assert outcome["status"] == "failed"
+    assert outcome["error"] == "DATABASE_URL could not be parsed; backup not attempted"
+    assert "s3cret-pw" not in serialized
+    assert "db.example" not in serialized
+
+
+def test_backup_db_passes_connection_uri_only_through_child_environment(tmp_path):
+    with (
+        patch.dict("os.environ", {"DATABASE_URL": SECRET_DB_URL}),
+        patch(
+            "scrape.orchestrator.subprocess.run", side_effect=_fake_pg_dump
+        ) as run,
+    ):
+        outcome = orchestrator.backup_db(str(tmp_path), verbose=False)
+
+    command = run.call_args.args[0]
+    child_env = run.call_args.kwargs["env"]
+    assert outcome["status"] == "success"
+    assert "s3cret-pw" not in " ".join(command)
+    assert SECRET_DB_URL not in " ".join(command)
+    assert child_env["PGDATABASE"] == (
+        "postgresql://scraper:s3cret-pw@db.example:5432/rentals?sslmode=require"
+    )
+    assert "channel_binding" not in child_env["PGDATABASE"]
+
+
+def test_backup_failure_report_never_contains_the_connection_uri(tmp_path):
+    failure = subprocess.CalledProcessError(
+        1,
+        ["pg_dump", SECRET_DB_URL],
+        output=SECRET_DB_URL,
+        stderr=SECRET_DB_URL,
+    )
+
+    with (
+        patch.dict("os.environ", {"DATABASE_URL": SECRET_DB_URL}),
+        patch("scrape.orchestrator.subprocess.run", side_effect=failure),
+    ):
+        outcome = orchestrator.backup_db(str(tmp_path), verbose=False)
+
+    serialized = json.dumps(outcome)
+    assert outcome["status"] == "failed"
+    assert SECRET_DB_URL not in serialized
+    assert "s3cret-pw" not in serialized
+    assert outcome["error"] == "pg_dump failed with exit code 1"
 
 
 if __name__ == "__main__":

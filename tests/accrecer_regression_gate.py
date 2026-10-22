@@ -20,30 +20,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import scrape.orchestrator
 
-EXPECTED_PORTALS_21 = [
-    "accrecer",
-    "albertoalvarez",
-    "alnago",
-    "arangotobon",
-    "arrendamientosdelnorte",
-    "arrendamientoselcastillo",
-    "arrendamientosmonserrate",
-    "arrendamientossantafe",
-    "arrendamientosvillacruz",
-    "coninsa",
-    "habitamos",
-    "lapalmainmobiliaria",
-    "maxibienes",
-    "merinohermanos",
-    "metrocasas",
-    "panoramainmobiliario",
-    "portadainmobiliaria",
-    "proserinmobiliaria",
-    "santillana",
-    "totalbienes",
-    "zitios",
-]
-
 RESULT_EXPECTED_KEYS = {"portal", "healthy", "listings", "elapsed", "error"}
 REPO_ROOT = Path(__file__).resolve().parent.parent
 

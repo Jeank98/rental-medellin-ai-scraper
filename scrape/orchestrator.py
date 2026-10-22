@@ -1,5 +1,5 @@
 """
-Orchestrator module — 5-phase pipeline for scraping all 21 Colombian real
+Orchestrator module — 5-phase pipeline for scraping all 25 Colombian real
 estate portals in parallel with health checks, validation, and DB backup.
 """
 
@@ -60,6 +60,10 @@ PORTALS = {
         "reuse_unchanged_details": True,
     },
     "zitios": {"module": "zitios", "reuse_unchanged_details": True},
+    "escalainmobiliaria": {"module": "escalainmobiliaria"},
+    "arrendamientosenvigado": {"module": "arrendamientosenvigado"},
+    "inmobiliarialaestrella": {"module": "inmobiliarialaestrella"},
+    "lonjainmobiliariadelsur": {"module": "lonjainmobiliariadelsur"},
 }
 
 def _script_name(portal: str) -> str:
@@ -446,6 +450,26 @@ def _coerce_backup_outcome(
     return _backup_outcome("skipped", reason=default_reason)
 
 
+def _pg_dump_error(error: Exception) -> str:
+    """Render a pg_dump failure without echoing the connection URI.
+
+    ``CalledProcessError`` embeds its command list, and ``TimeoutExpired`` can
+    embed captured output.  ``urlparse`` raises ``ValueError`` messages that
+    quote the whole netloc, credentials included.  Every branch is rebuilt
+    from type/exit state only so a connection string can never reach the
+    console or the JSON report.
+    """
+    if isinstance(error, subprocess.CalledProcessError):
+        return f"pg_dump failed with exit code {error.returncode}"
+    if isinstance(error, subprocess.TimeoutExpired):
+        return f"pg_dump timed out after {error.timeout:g}s"
+    if isinstance(error, ValueError):
+        return "DATABASE_URL could not be parsed; backup not attempted"
+    if isinstance(error, OSError):
+        return f"pg_dump could not run: {error.strerror or type(error).__name__}"
+    return f"pg_dump failed ({type(error).__name__})"
+
+
 def backup_db(
     backup_dir: str = "~/Projects/Backups",
     verbose: bool = True,
@@ -455,6 +479,10 @@ def backup_db(
     ``path`` is the completed backup path on success and the attempted path on
     a command failure when it could be known.  Missing ``DATABASE_URL`` is an
     intentional skip, while a failed ``pg_dump`` is a required-backup failure.
+
+    The connection URI is passed to ``pg_dump`` through ``PGDATABASE`` in the
+    child environment rather than as an argument, so the command line, error
+    text, and persisted report never contain database credentials.
     """
     db_url = os.environ.get("DATABASE_URL")
     if not db_url:
@@ -472,6 +500,7 @@ def backup_db(
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         dump_file = backup_path / f"rental_scraper_{timestamp}.sql"
         clean_url = _clean_db_url(db_url)
+        dump_env = {**os.environ, "PGDATABASE": clean_url}
 
         if verbose:
             print(f"\n{'='*50}")
@@ -479,31 +508,42 @@ def backup_db(
             print(f"{'='*50}")
 
         subprocess.run(
-            ["pg_dump", clean_url, "--no-owner", "--no-acl", "-f", str(dump_file)],
+            ["pg_dump", "--no-owner", "--no-acl", "-f", str(dump_file)],
             capture_output=True,
             text=True,
             timeout=300,
             check=True,
+            env=dump_env,
         )
         file_size = dump_file.stat().st_size
         if verbose:
             print(f"  ✅ Backup complete — {file_size / 1024:.0f} KB\n")
         return _backup_outcome("success", path=str(dump_file))
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as error:
+    except Exception as error:
+        # This boundary is total on purpose: every failure mode here (pg_dump,
+        # timeout, filesystem, URL parsing) can carry the connection URI in
+        # ``str(error)``, so only the sanitized renderer is persisted.
+        error_message = _pg_dump_error(error)
         if verbose:
-            print(f"  ❌ Backup FAILED — {error}\n")
+            print(f"  ❌ Backup FAILED — {error_message}\n")
         return _backup_outcome(
             "failed",
             path=str(dump_file) if dump_file else None,
-            error=str(error),
+            error=error_message,
             reason="pg_dump_failed",
         )
 
 
-def export_to_sheets(ciudad: str = "medellin", verbose: bool = True) -> dict:
-    """Mirror the current DB state to Sheets after portal writes complete."""
+def export_to_sheets(verbose: bool = True) -> dict:
+    """Mirror the complete active DB state to Sheets after portal writes.
+
+    The shared spreadsheet is the live mirror of every active ``portal+city``
+    snapshot, so this path never passes a city or portal filter: narrowing the
+    export to one municipality would silently drop the other cities from the
+    mirror.
+    """
     result = run_with_retries(
-        ["uv", "run", "python", "scripts/export_to_sheets.py", "--city", ciudad],
+        ["uv", "run", "python", "scripts/export_to_sheets.py"],
         timeout=SHEET_TIMEOUT_SECONDS,
         max_attempts=1,
     )
@@ -635,7 +675,7 @@ def run_pipeline(
             "attempts": 0, "elapsed": 0.0, "error": None,
         }
     else:
-        sheet_result = export_to_sheets(ciudad)
+        sheet_result = export_to_sheets()
 
     if not sheet_result["success"]:
         validation["warnings"].append(
