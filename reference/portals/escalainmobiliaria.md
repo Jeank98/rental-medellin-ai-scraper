@@ -54,21 +54,42 @@ Each response is validated as `{propiedades: list, total: int}` before use. A
 payload that carries only `message`/`error`, a malformed record, or a missing or
 invalid `total` is a technical failure (raise), never an empty inventory.
 
-The crawl is complete when the number of unique raw records reaches `total`.
-Every raw record must carry a usable `codigo`; a missing or unusable code is an
-integrity error raised before any progress is counted, never a synthetic
-pagination identity or a silently skipped property. The loop also fails loudly
-on:
+The reported `total` is **advisory**, not a loop bound: the API recomputes it on
+every request and Vercel caches each `pagina` URL independently
+(`x-vercel-cache: HIT`/`STALE`, `age` up to ~316 s observed). Two pages of one
+crawl therefore report different totals for the same inventory. Verified on
+2026-10-22 for Medellín (`ciudad=496`, `limite=100`, fresh requests): `pagina`
+0 reported `total=569`, page 1 reported 570, pages 2–6 reported 571; pages 1
+and 2 each repeated the previous page's last code (one insertion shifts every
+record down one slot), page 5 returned 71 records and page 6 returned 0.
 
-- an empty page while fewer than `total` unique records were seen (premature
-  empty / truncated pagination);
+Termination is the first **empty** `propiedades` array, which is authoritative:
+the endpoint is a zero-based sequential window, so an empty page means the
+offset is past the end of the result set. A full crawl must additionally have
+seen at least the smallest `total` any page reported; otherwise records were
+lost (repeated, skipped, truncated or inconsistent pages) and the crawl raises
+instead of storing a partial inventory. The loop fails loudly on:
+
+- an empty page while fewer than the smallest reported total were seen
+  (premature empty / truncated pagination); totals carried by empty pages are
+  ignored so a stale cached empty page cannot lower that floor;
+- an empty first page whose total is non-zero (contradictory metadata);
 - a page whose codes were all seen before (repeated pagination);
-- more unique records than `total`, or a `total` that changes between pages
-  (inconsistent metadata).
+- more unique records than the largest reported total (contradictory metadata);
+- a record without a usable `codigo` (integrity error raised before any
+  progress is counted, never a synthetic pagination identity).
+
+A transient upstream failure is retried: the API answers HTTP 200 with
+`{"error": "No se pudieron cargar las propiedades", "detail": "The operation was
+aborted due to timeout"}` and no `propiedades` key. Each page gets three
+attempts (0.5 s apart) before the crawl names the failing city and page.
 
 `max_pages` caps requested pages explicitly. `sample_only` caps the crawl to one
 page per city. Both are bounded partial inspections; their results must never be
 stored or reported as a complete snapshot.
+
+`limite` is clamped server-side to 100: `limite=200`, `300`, `600` and `1000`
+all returned exactly 100 records, so a single large page cannot replace paging.
 
 Verified pagination evidence: La Estrella (`ciudad=416`) with `limite=3` returns
 3, 3, 3, 0 records on `pagina` 0, 1, 7, 8 and reports `total=24` with no overlap.

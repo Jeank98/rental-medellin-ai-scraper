@@ -146,10 +146,11 @@ def test_page_url_uses_numeric_city_zero_based_page_and_bounded_limit():
         build_page_url(496, -1)
 
 
-def test_pagination_stops_when_reported_total_is_reached():
+def test_pagination_ends_on_empty_page_after_last_record():
     pages = [
         _page([_rental("1"), _rental("2")], total=3),
         _page([_rental("3")], total=3),
+        _page([], total=3),
     ]
     with (
         mock.patch("scrape.escalainmobiliaria.PAGE_SIZE", 2),
@@ -158,25 +159,51 @@ def test_pagination_stops_when_reported_total_is_reached():
         rows = scrape("medellin")
 
     assert [row["id"] for row in rows] == ["ESC-1", "ESC-2", "ESC-3"]
-    assert fetch.call_count == 2
+    assert fetch.call_count == 3
+
+
+def test_live_total_drift_between_pages_is_not_a_pagination_failure():
+    """The API recomputes ``total`` per request; insertions shift records down.
+
+    Live shape (Medellín, 2026-10-22): page 0 reported 569, page 1 reported 570
+    and repeated the previous page's last code, page 2 reported 571, the last
+    data page carried the remainder, then an empty page ended the crawl.
+    """
+    pages = [
+        _page([_rental("1"), _rental("2")], total=4),
+        _page([_rental("2"), _rental("3")], total=5),
+        _page([_rental("4"), _rental("5")], total=5),
+        _page([], total=5),
+    ]
+    with (
+        mock.patch("scrape.escalainmobiliaria.PAGE_SIZE", 2),
+        mock.patch("scrape.escalainmobiliaria.fetch_json", side_effect=pages) as fetch,
+    ):
+        rows = scrape("medellin")
+
+    assert [row["id"] for row in rows] == ["ESC-1", "ESC-2", "ESC-3", "ESC-4", "ESC-5"]
+    assert fetch.call_count == 4
 
 
 def test_filtered_source_records_still_count_toward_pagination_progress():
-    """Sale, wrong-city and commercial rows are filtered but still advance total."""
-    page = _page(
-        [
-            _rental("1"),
-            _rental("2", operacion="Venta"),
-            _rental("3", ciudad="Envigado"),
-            _rental("4", tipo="Local"),
-        ],
-        total=4,
-    )
-    with mock.patch("scrape.escalainmobiliaria.fetch_json", return_value=page) as fetch:
+    """Sale, wrong-city and commercial rows are filtered but still advance progress."""
+    pages = [
+        _page(
+            [
+                _rental("1"),
+                _rental("2", operacion="Venta"),
+                _rental("3", ciudad="Envigado"),
+                _rental("4", tipo="Local"),
+            ],
+            total=4,
+        ),
+        _page([], total=4),
+    ]
+    with mock.patch("scrape.escalainmobiliaria.fetch_json", side_effect=pages) as fetch:
         rows = scrape("medellin")
 
     assert [row["id"] for row in rows] == ["ESC-1"]
-    assert fetch.call_count == 1
+    assert fetch.call_count == 2
 
 
 def test_missing_or_unusable_source_code_is_integrity_failure():
@@ -224,27 +251,91 @@ def test_pagination_detects_repeated_page_and_premature_empty_page():
             scrape("medellin")
 
 
-def test_pagination_rejects_inconsistent_counts_and_totals():
+def test_pagination_rejects_more_records_than_any_reported_total():
     with mock.patch("scrape.escalainmobiliaria.fetch_json") as fetch:
         fetch.return_value = _page([_rental("1"), _rental("2"), _rental("3")], total=2)
-        with pytest.raises(RuntimeError, match="reported total"):
+        with pytest.raises(RuntimeError, match="reported a total of at most 2"):
             scrape("medellin")
 
 
-def test_pagination_rejects_changed_total_and_invalid_payloads():
+def test_full_walk_fails_when_records_are_lost_between_pages():
+    """A full crawl must see at least the smallest total the API reported."""
+    pages = [
+        _page([_rental("1"), _rental("2")], total=5),
+        _page([_rental("3")], total=5),
+        _page([], total=5),
+    ]
     with (
         mock.patch("scrape.escalainmobiliaria.PAGE_SIZE", 2),
-        mock.patch(
-            "scrape.escalainmobiliaria.fetch_json",
-            side_effect=[
-                _page([_rental("1"), _rental("2")], total=4),
-                _page([_rental("3")], total=5),
-            ],
-        ),
+        mock.patch("scrape.escalainmobiliaria.fetch_json", side_effect=pages),
     ):
-        with pytest.raises(RuntimeError, match="changed total"):
+        with pytest.raises(RuntimeError, match="ended early"):
             scrape("medellin")
 
+
+def test_stale_empty_page_total_cannot_lower_the_completeness_floor():
+    """A cached empty page reporting ``total=0`` must not excuse lost records."""
+    pages = [
+        _page([_rental("1"), _rental("2")], total=5),
+        _page([_rental("3")], total=5),
+        _page([], total=0),
+    ]
+    with (
+        mock.patch("scrape.escalainmobiliaria.PAGE_SIZE", 2),
+        mock.patch("scrape.escalainmobiliaria.fetch_json", side_effect=pages),
+    ):
+        with pytest.raises(RuntimeError, match="ended early"):
+            scrape("medellin")
+
+
+def test_empty_first_page_with_non_zero_total_is_inconsistent():
+    with mock.patch(
+        "scrape.escalainmobiliaria.fetch_json",
+        side_effect=[_page([], total=571)],
+    ):
+        with pytest.raises(RuntimeError, match="empty page 0 while reporting total"):
+            scrape("medellin")
+
+
+def test_declared_upstream_failure_and_missing_payload_are_retried():
+    """Live evidence: HTTP 200 carries an error/detail payload, no propiedades."""
+    pages = [
+        None,
+        {
+            "error": "No se pudieron cargar las propiedades",
+            "detail": "The operation was aborted due to timeout",
+        },
+        _page([_rental("1")], total=1),
+        _page([], total=1),
+    ]
+    with (
+        mock.patch("scrape.escalainmobiliaria.fetch_json", side_effect=pages) as fetch,
+        mock.patch("scrape.escalainmobiliaria._PAGE_RETRY_DELAY_SECONDS", 0),
+    ):
+        rows = scrape("medellin")
+
+    assert [row["id"] for row in rows] == ["ESC-1"]
+    assert fetch.call_count == 4
+
+
+def test_persistent_page_failure_names_the_city_and_page():
+    failure = {
+        "error": "No se pudieron cargar las propiedades",
+        "detail": "The operation was aborted due to timeout",
+    }
+    with (
+        mock.patch(
+            "scrape.escalainmobiliaria.fetch_json", return_value=failure
+        ) as fetch,
+        mock.patch("scrape.escalainmobiliaria._PAGE_RETRY_DELAY_SECONDS", 0),
+    ):
+        with pytest.raises(RuntimeError, match="city 496 page 0"):
+            scrape("medellin")
+
+    assert fetch.call_count == 3
+
+
+def test_pagination_rejects_invalid_payloads():
     with pytest.raises(RuntimeError, match="invalid payload"):
         parse_search_response({"message": "Unauthorized", "total": 0}, "medellin")
     with pytest.raises(RuntimeError, match="valid total"):

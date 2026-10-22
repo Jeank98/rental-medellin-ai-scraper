@@ -13,12 +13,19 @@ exact requested city.
 
 No detail request is required; every contractual field is present in the
 listing payload.
+
+Pagination terminates on the first empty ``propiedades`` array. The reported
+``total`` is recomputed per request and every page is cached independently, so
+totals legitimately differ between pages of one crawl (verified live); a full
+crawl still has to see at least the smallest reported total or it raises rather
+than storing a partial inventory.
 """
 
 from __future__ import annotations
 
 import logging
 import math
+import time
 from collections.abc import Iterable
 from typing import Final, TypedDict
 from urllib.parse import quote
@@ -40,6 +47,12 @@ BASE_URL: Final = "https://escalainmobiliaria.com.co"
 API_BASE: Final = f"{BASE_URL}/api/v2/propiedades"
 DETAIL_BASE: Final = f"{BASE_URL}/propiedad/"
 PAGE_SIZE: Final = 100
+
+# The API answers with HTTP 200 and a declared ``error``/``detail`` payload when
+# its upstream times out (verified live); one such response must not abort a
+# whole city crawl.
+_PAGE_ATTEMPTS: Final = 3
+_PAGE_RETRY_DELAY_SECONDS: Final = 0.5
 
 # Verified from /api/v2/catalogos on 2026-10-22.
 CITY_IDS: Final[dict[str, int]] = {
@@ -298,9 +311,42 @@ def _validate_max_pages(max_pages: int | None) -> None:
         raise ValueError("max_pages must be at least 1")
 
 
+def _is_declared_failure(data) -> bool:
+    """True when the API answered with a declared failure instead of a page.
+
+    Verified live on 2026-10-22: ``/api/v2/propiedades`` can return HTTP 200
+    with ``{"error": "No se pudieron cargar las propiedades", "detail":
+    "The operation was aborted due to timeout"}`` and no ``propiedades`` key.
+    That is a transient upstream failure, not an inventory statement.
+    """
+    return data is None or (isinstance(data, dict) and "propiedades" not in data)
+
+
 def _fetch_page(city_id: int, pagina: int) -> dict:
-    """Fetch one page; callers validate the payload before consuming it."""
-    return fetch_json(build_page_url(city_id, pagina, PAGE_SIZE))
+    """Fetch one page, retrying only declared upstream failures.
+
+    Callers validate the payload before consuming it, so a payload that keeps
+    failing here is reported once with the city and page that failed instead
+    of aborting a whole city crawl on one transient timeout.
+    """
+    for attempt in range(1, _PAGE_ATTEMPTS + 1):
+        data = fetch_json(build_page_url(city_id, pagina, PAGE_SIZE))
+        if not _is_declared_failure(data):
+            return data
+        logger.warning(
+            "Escala API city %d page %d failed (attempt %d/%d)",
+            city_id,
+            pagina,
+            attempt,
+            _PAGE_ATTEMPTS,
+        )
+        if attempt < _PAGE_ATTEMPTS:
+            time.sleep(_PAGE_RETRY_DELAY_SECONDS)
+
+    raise RuntimeError(
+        f"Escala API failed for city {city_id} page {pagina} "
+        f"after {_PAGE_ATTEMPTS} attempts"
+    )
 
 
 def _scrape_city(
@@ -309,39 +355,52 @@ def _scrape_city(
     max_pages: int | None,
     verbose: bool,
 ) -> list[Listing]:
-    """Crawl every operation for one city and keep locally verified rentals."""
+    """Crawl every operation for one city and keep locally verified rentals.
+
+    Termination is the first empty ``propiedades`` array, not the reported
+    ``total``: the API recomputes ``total`` on every request and serves each
+    page from an independent CDN cache entry, so totals legitimately differ
+    between pages of one crawl. The reported totals are therefore advisory
+    progress metadata plus a completeness floor: a full crawl must have seen
+    at least the smallest total the API ever reported, otherwise records were
+    lost (repeated, skipped, truncated or inconsistent pages) and the crawl
+    raises instead of storing a partial inventory.
+    """
     city_id = CITY_IDS[city_key]
     page_cap = max_pages if max_pages is not None else (1 if sample_only else None)
 
     listings: list[Listing] = []
     seen_codes: set[str] = set()
-    total: int | None = None
+    reported_totals: list[int] = []
     pagina = 0
 
     while True:
         if page_cap is not None and pagina >= page_cap:
             break
-        if total is not None and len(seen_codes) >= total:
-            break
 
-        data = _fetch_page(city_id, pagina)
-        records, page_total = _validate_page(data)
-
-        if total is None:
-            total = page_total
-        elif page_total != total:
-            raise RuntimeError(
-                f"Escala pagination for {city_key} changed total "
-                f"from {total} to {page_total} on page {pagina}"
-            )
+        records, page_total = _validate_page(_fetch_page(city_id, pagina))
 
         if not records:
-            if len(seen_codes) < total:
+            if not reported_totals:
+                # An empty first page with a non-zero total is contradictory;
+                # an empty first page with total 0 is a genuinely empty city.
+                if page_total:
+                    raise RuntimeError(
+                        f"Escala pagination for {city_key} returned an empty "
+                        f"page 0 while reporting total {page_total}"
+                    )
+                break
+            # Totals from empty pages are ignored: a stale cached empty page
+            # must not lower the completeness floor of a full crawl.
+            floor = min(reported_totals)
+            if len(seen_codes) < floor:
                 raise RuntimeError(
                     f"Escala pagination for {city_key} ended early: page {pagina} "
-                    f"is empty after {len(seen_codes)}/{total} records"
+                    f"is empty after {len(seen_codes)}/{floor} records"
                 )
             break
+
+        reported_totals.append(page_total)
 
         page_keys = [_code_value(item["codigo"]) for item in records]
         new_keys = [key for key in page_keys if key not in seen_codes]
@@ -350,10 +409,10 @@ def _scrape_city(
                 f"Escala pagination for {city_key} repeated page {pagina}"
             )
         seen_codes.update(new_keys)
-        if len(seen_codes) > total:
+        if len(seen_codes) > max(reported_totals):
             raise RuntimeError(
                 f"Escala pagination for {city_key} returned {len(seen_codes)} "
-                f"records but reported total {total}"
+                f"records but reported a total of at most {max(reported_totals)}"
             )
 
         for item in records:
@@ -367,10 +426,21 @@ def _scrape_city(
                 city_key,
                 pagina,
                 len(seen_codes),
-                total,
+                page_total,
                 len(listings),
             )
         pagina += 1
+
+    if verbose and len(set(reported_totals)) > 1:
+        logger.info(
+            "Escala: %s live total drifted %d..%d across %d pages; "
+            "kept %d unique source records",
+            city_key,
+            min(reported_totals),
+            max(reported_totals),
+            len(reported_totals),
+            len(seen_codes),
+        )
 
     return deduplicate_listings(listings)
 
