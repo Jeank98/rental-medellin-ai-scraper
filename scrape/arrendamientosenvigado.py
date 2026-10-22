@@ -192,6 +192,9 @@ def _local_name(tag) -> str:
 
 def _known_city(value: str) -> str:
     key = normalize_city(value or "")
+    # The portal also uses this Medellín corregimiento as a locality label.
+    if key == "san-antonio-de-prado":
+        return "medellin"
     return key if key in CITY_LABELS else ""
 
 
@@ -228,7 +231,7 @@ def _is_explicit_non_residential(raw: str) -> bool:
 
 
 def _match_municipality_tokens(tokens: list[str]) -> tuple[str, int, int]:
-    for size in (3, 2, 1):
+    for size in (4, 3, 2, 1):
         for start in range(0, len(tokens) - size + 1):
             city = _known_city("-".join(tokens[start : start + size]))
             if city:
@@ -643,6 +646,23 @@ def _og_location_text(soup: BeautifulSoup) -> str:
     return ""
 
 
+def _listing_title_text(soup: BeautifulSoup) -> str:
+    """Return the listing headline from ``og:title``, falling back to ``<title>``.
+
+    The portal renders ``{tipo} en {operacion} en {Municipio}, {Barrio} · Cód.
+    {code}`` in both places, so either one names the municipality of a listing
+    whose H1 is the bare ``Apartamento en arriendo`` heading.
+    """
+    for meta in soup.find_all("meta"):
+        prop = str(meta.get("property") or meta.get("name") or "").casefold()
+        if prop == "og:title":
+            content = _clean_ws(meta.get("content"))
+            if content:
+                return content
+    node = soup.find("title")
+    return _clean_text(node) if node else ""
+
+
 def _municipality_from_text(text: str) -> str:
     folded = _fold(text)
     for key in _CITY_KEYS_BY_WORDS:
@@ -675,10 +695,14 @@ def _location_city_barrio(text: str) -> tuple[str, str]:
 
 
 def _municipality_phrase(text: str) -> str:
-    """Return the trailing location phrase of a heading such as ``... en Bello``."""
+    """Return the trailing location phrase of a heading such as ``... en Bello``.
+
+    A listing title ends the location with ``· Cód. N``, so the middle dot is a
+    boundary too; without it the code suffix would be glued to the municipality.
+    """
     chunks = re.split(r"\ben\s+", str(text or ""), flags=re.IGNORECASE)
     for chunk in reversed(chunks[1:]):
-        phrase = _clean_ws(re.split(r"[,|.;\n]", chunk)[0])
+        phrase = _clean_ws(re.split(r"[,|.;·\n]", chunk)[0])
         folded = _fold(phrase)
         if not folded:
             continue
@@ -747,9 +771,11 @@ def _first_digits(text: str) -> str:
 def _parse_detail_page(html: str, expected_code: str | None = None) -> dict | None:
     """Parse one detail page.
 
-    Returns ``None`` for explicit dead pages, sale listings and non-residential
-    types.  Raises ``PortalParseError`` when the page is malformed or its
-    identity (code, operation, type, municipality) conflicts with the sitemap.
+    Returns ``None`` for explicit dead pages, sale listings, non-residential
+    types and listings whose explicitly stated municipality is outside the
+    supported city list.  Raises ``PortalParseError`` when the page is malformed
+    or its identity (code, operation, type, municipality) conflicts with the
+    sitemap, and when no municipality is stated at all.
     """
     if not html or not str(html).strip():
         raise PortalParseError("empty detail response")
@@ -774,6 +800,7 @@ def _parse_detail_page(html: str, expected_code: str | None = None) -> dict | No
         raise PortalParseError("detail page has no canonical /inmueble/ URL")
 
     h1_text = _clean_text(scope.find("h1")) if scope.find("h1") else ""
+    title_text = _listing_title_text(soup)
     location_text = _og_location_text(soup)
     location_city, location_barrio = _location_city_barrio(location_text)
 
@@ -843,13 +870,29 @@ def _parse_detail_page(html: str, expected_code: str | None = None) -> dict | No
     elif len(observed_cities) == 1:
         municipality = observed_cities.pop()
     elif len(observed_cities) > 1:
-        raise PortalParseError("detail municipality is ambiguous")
+        raise PortalParseError(
+            f"detail municipality is ambiguous: {sorted(observed_cities)} "
+            f"at {canonical_url}"
+        )
     else:
-        phrase = _municipality_phrase(h1_text) or _municipality_phrase(location_text)
-        if phrase:
+        # No supported municipality is stated and the canonical slug carries no
+        # city token this portal supports.  Detail pages whose H1 is the bare
+        # "Apartamento en arriendo" heading name their municipality only in the
+        # listing title, so that text decides between an explicitly
+        # out-of-scope listing and a page that states no location at all.
+        phrase = (
+            _municipality_phrase(h1_text)
+            or _municipality_phrase(location_text)
+            or _municipality_phrase(title_text)
+        )
+        if not phrase:
+            raise PortalParseError(
+                f"detail municipality is missing at {canonical_url} (code {code})"
+            )
+        municipality = _known_city(phrase)
+        if not municipality:
             # A named but unsupported municipality is out of scope, not a failure.
             return None
-        raise PortalParseError("detail municipality is missing")
 
     barrio = canonical["barrio"]
     if not barrio and location_city == municipality and location_barrio:

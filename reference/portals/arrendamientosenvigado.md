@@ -29,6 +29,11 @@
 - A detail is discarded when it is an explicit sale listing, an explicit non-residential type, or a municipality outside the requested cities. A named but unsupported municipality never leaks into another city scope.
 - Code mismatches (sitemap vs canonical vs `Código`), canonical-vs-H1 operation disagreements and municipality conflicts (canonical vs H1 vs `og:image:alt`) raise `PortalParseError`; they never silently corrupt a row.
 - `og:image:alt` states the verified bare `Municipio, Barrio` pair; only a first segment that is a supported municipality is used, and it is cross-checked against the canonical municipality.
+- The H1 of every verified detail is the generic `Apartamento en arriendo` heading, so it names no municipality. The location survives in the listing title (`og:title`, falling back to `<title>`), which renders `{tipo} en {operacion} en {Municipio}, {Barrio} · Cód. {code}`; the `·` terminates the location so the code suffix never joins the municipality.
+- A listing whose canonical slug carries no supported city token is resolved from the municipality named by the H1, the `og:image:alt` pair or the listing title. A name that is not one of the supported cities is an explicitly out-of-scope listing and is skipped, not stored, while a page that states no municipality at all raises with its canonical URL and code.
+- The sitemap also includes properties in Rionegro, El Retiro, Marinilla, La Ceja, Caldas, Carmen de Viboral, San Vicente, Guarne, Guatapé and other out-of-scope municipalities. These must not abort collection of the requested cities.
+- Normalize the source locality `San Antonio de Prado` to `medellin`: it is a [Medellín corregimiento, according to the Alcaldía](https://www.medellin.gov.co/es/corregimientos/gerencia/san-antonio-de-prado), not an additional municipality. The primary title and `og:image:alt` of apartment 78648 explicitly name `San Antonio De Prado, Vergel`; retain its barrio `Vergel` and include it in Medellín. Do not assign arbitrary unknown localities to Medellín.
+- A title-derived municipality is accepted when it is a supported city, so a cityless canonical with a missing `og:image:alt` is stored instead of being discarded as out of scope.
 - Each metric label is paired only with the value cell rendered immediately after it: the price card keeps `Precio de arriendo` and `$7.500.000` as adjacent `p` cells followed by the metrics `ul` (`Área construida`, `Habitaciones`, `Baños`…), and a metric row keeps its label and value `span`s inside one `li`. A metrics container, another label or an empty cell never supplies the value, so an empty row never borrows a following row, a sibling block or the rest of the parent container. Only whole structured labels match, so label-prefixed prose never supplies a value.
 - Embedded Flight JSON and `<script>` blocks are removed before parsing, and recommendation blocks (class/id or `Otros resultados` heading) are excluded so their labels cannot contaminate the primary metrics.
 
@@ -36,7 +41,7 @@
 
 - A detail is skipped only for the verified HTTP 200 soft-404: `robots noindex`, the site-root canonical **and** explicit text such as `Este inmueble ya no se encuentra disponible` all present.
 - A `noindex` response without that complete evidence (challenge/interstitial, missing canonical, missing unavailable text) is a technical failure.
-- An HTTP 200 alone is never treated as active. A page with missing required `Precio de arriendo`/`Código` labels, malformed sitemap XML, or a failed sitemap/detail fetch raises a portal error instead of publishing a partial dataset.
+- An HTTP 200 alone is never treated as active. A page with missing required `Precio de arriendo`/`Código` labels, no stated municipality (or two conflicting supported municipalities with no canonical city), malformed sitemap XML, or a failed sitemap/detail fetch raises a portal error instead of publishing a partial dataset. The municipality error carries the canonical URL and code so the offending source can be re-checked directly.
 
 **Scrape model**
 

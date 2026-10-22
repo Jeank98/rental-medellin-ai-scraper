@@ -94,6 +94,7 @@ def _detail_html(
   <title>{title}</title>
   <link rel="canonical" href="{canonical}">
   <meta property="og:url" content="{canonical}">
+  <meta property="og:title" content="{title}">
   <meta property="og:image:alt" content="{location}">
 </head>
 <body>
@@ -403,6 +404,127 @@ def test_sale_and_unsupported_municipality_are_skipped_not_stored():
         location="Bello, Centro",
     )
     assert aev._parse_detail_page(outside, expected_code="80500") is None
+
+
+def test_san_antonio_de_prado_corregimiento_is_included_in_medellin():
+    detail = _detail_html(
+        code="78648",
+        slug="apartamento-arriendo-san-antonio-de-prado-vergel-78648",
+        h1="Apartamento en arriendo",
+        title="Apartamento en arriendo en San Antonio De Prado, Vergel · Cód. 78648",
+        location="San Antonio De Prado, Vergel",
+    )
+
+    parsed = aev._parse_detail_page(detail, expected_code="78648")
+
+    assert parsed is not None
+    assert (parsed["municipio"], parsed["barrio"]) == ("medellin", "Vergel")
+
+
+def test_bare_h1_unsupported_municipality_is_skipped_not_raised():
+    # Verified source shape of
+    # /inmueble/apartamento-arriendo-rionegro-fontibon-80349: the H1 is the
+    # generic "Apartamento en arriendo" heading and the municipality appears
+    # only in the listing title and in the og:image:alt pair.
+    detail = _detail_html(
+        code="80349",
+        slug="apartamento-arriendo-rionegro-fontibon-80349",
+        h1="Apartamento en arriendo",
+        title="Apartamento en arriendo en Rionegro, Fontibon · Cód. 80349",
+        location="Rionegro, Fontibon",
+        precio="$ 1.700.000",
+        area="53 m²",
+        habitaciones="3",
+        banos="2",
+        parqueadero="1",
+        estrato="",
+    )
+
+    assert aev._parse_detail_page(detail, expected_code="80349") is None
+
+
+def test_title_only_unsupported_municipality_is_skipped_without_location_meta():
+    detail = _detail_html(
+        code="80308",
+        slug="apartamento-arriendo-rionegro-barro-blanco-80308",
+        h1="Apartamento en arriendo",
+        title="Apartamento en arriendo en Rionegro, Barro Blanco · Cód. 80308",
+        location="",
+        precio="$ 2.700.000",
+    )
+
+    assert aev._parse_detail_page(detail, expected_code="80308") is None
+
+
+def test_unsupported_municipality_never_blocks_a_requested_city_sample():
+    outside = "/inmueble/apartamento-arriendo-rionegro-fontibon-80349"
+    rental = "/inmueble/apartamento-arriendo-envigado-el-portal-80307"
+    details = {
+        f"{BASE}{outside}": _detail_html(
+            code="80349",
+            slug="apartamento-arriendo-rionegro-fontibon-80349",
+            h1="Apartamento en arriendo",
+            title="Apartamento en arriendo en Rionegro, Fontibon · Cód. 80349",
+            location="Rionegro, Fontibon",
+            precio="$ 1.700.000",
+        ),
+        f"{BASE}{rental}": _detail_html(code="80307"),
+    }
+
+    rows, batches = _scrape_with(
+        _sitemap(outside, rental), details, ["envigado"], sample_only=True
+    )
+
+    fetched = [url for batch in batches for url in batch]
+    assert sorted(fetched) == sorted([f"{BASE}{outside}", f"{BASE}{rental}"])
+    assert [row["id"] for row in rows["envigado"]] == ["AEV-80307"]
+
+
+def test_title_only_supported_municipality_is_accepted_on_a_cityless_canonical():
+    detail = _detail_html(
+        code="80356",
+        slug="80356",
+        h1="Apartamento en arriendo",
+        title="Apartamento en arriendo en Medellín, Laureles · Cód. 80356",
+        location="",
+    )
+
+    parsed = aev._parse_detail_page(detail, expected_code="80356")
+
+    assert parsed["municipio"] == "medellin"
+    assert parsed["barrio"] == ""
+
+
+def test_page_that_states_no_municipality_still_raises_with_its_source_url():
+    detail = _detail_html(
+        code="80356",
+        slug="80356",
+        h1="Apartamento en arriendo",
+        title="Apartamento en arriendo · Cód. 80356",
+        location="",
+    )
+
+    with pytest.raises(aev.PortalParseError) as excinfo:
+        aev._parse_detail_page(detail, expected_code="80356")
+
+    message = str(excinfo.value)
+    assert "municipality is missing" in message
+    assert f"{BASE}/inmueble/80356" in message
+
+
+def test_two_supported_municipalities_without_a_canonical_city_are_ambiguous():
+    detail = _detail_html(
+        code="80356",
+        slug="80356",
+        h1="Apartamento en arriendo en Envigado, Primavera",
+        title="Apartamento en arriendo en Envigado, Primavera",
+        location="Sabaneta, Primavera",
+    )
+
+    with pytest.raises(aev.PortalParseError) as excinfo:
+        aev._parse_detail_page(detail, expected_code="80356")
+
+    assert "ambiguous" in str(excinfo.value)
 
 
 def test_canonical_and_h1_operation_disagreement_raises():
