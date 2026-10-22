@@ -88,6 +88,7 @@ def _detail_html(
     listing_url: str | None = None,
     omit_address: bool = False,
     agent_locality: str | None = None,
+    description_heading: str | None = None,
 ) -> str:
     if operation == "rent":
         name = f"Apartamento en arriendo en {locality}"
@@ -147,18 +148,16 @@ def _detail_html(
     # The real detail page carries the sector inside its primary description,
     # not in a labelled field.  A page without one uses generic lowercase
     # prose ("un sector residencial"), exactly like the live 9433 page.
-    if sector:
-        description = (
-            f"<strong>Apartamento en Arriendo – Sector {sector}, {locality}"
-            f"</strong><br>Apartamento de aproximadamente {area} m², ubicado en "
-            f"el sector {sector} de {locality}."
-        )
+    if description_heading is not None:
+        heading = description_heading
+    elif sector:
+        heading = f"Apartamento en Arriendo – Sector {sector}, {locality}"
     else:
-        description = (
-            f"<strong>Apartamento en Arriendo – Unidad Residencial, {locality}"
-            f"</strong><br>Apartamento de aproximadamente {area} m², ubicado en "
-            "un sector residencial tranquilo."
-        )
+        heading = f"Apartamento en Arriendo – Unidad Residencial, {locality}"
+    description = (
+        f"<strong>{heading}</strong><br>Apartamento de aproximadamente {area} m², "
+        "ubicado en un sector residencial tranquilo."
+    )
     listing["description"] = description
     canonical = f"{BASE_URL}/propiedad/inmueble-{canonical_code or code}"
     extra_script = (
@@ -432,6 +431,78 @@ def test_detail_ignores_recommendation_sector() -> None:
     assert detail["city_key"] == "la-estrella"
 
 
+def test_detail_documented_medellin_corregimiento_is_published() -> None:
+    # Live 8187: addressLocality is the corregimiento, not the municipality.
+    html = _detail_html(
+        _CODE_A,
+        locality="SAN ANTONIO DE PRADO",
+        sector="Rosaleda",
+    )
+
+    detail = parse_detail(html, _CODE_A)
+
+    assert detail["ciudad"] == "SAN ANTONIO DE PRADO"
+    assert detail["city_key"] == "medellin"
+    assert detail["barrio"] == "Rosaleda"
+
+
+def test_detail_primary_heading_municipality_resolves_compound_locality() -> None:
+    # Live 9454: addressLocality is "ITAGUI SANTA MARIA"; the property's own
+    # title line names Itagüí, which is the authoritative primary evidence.
+    html = _detail_html(
+        _CODE_A,
+        locality="ITAGUI SANTA MARIA",
+        sector=None,
+        description_heading=(
+            "Apartamento en Arriendo – Edificio May, Sector Santa María, "
+            "Itagüí (Piso 5)"
+        ),
+    )
+
+    detail = parse_detail(html, _CODE_A)
+
+    assert detail["ciudad"] == "ITAGUI SANTA MARIA"
+    assert detail["city_key"] == "itagui"
+
+
+def test_detail_heading_municipality_confirms_a_documented_alias() -> None:
+    # Live 9612: the description names Medellín for a Guayabal locality.
+    html = _detail_html(
+        _CODE_A,
+        locality="GUAYABAL",
+        sector="Guayabal",
+        description_heading=(
+            "Apartamento en Arriendo – Urbanity, Sector Guayabal, Medellín (Piso 16)"
+        ),
+    )
+
+    detail = parse_detail(html, _CODE_A)
+
+    assert detail["city_key"] == "medellin"
+
+
+def test_detail_unknown_locality_is_never_assumed_to_be_medellin() -> None:
+    # Live 9695: Bariloche is an Itagüí sector.  Without primary municipality
+    # evidence the label must stay unresolved instead of joining Medellín.
+    html = _detail_html(_CODE_A, locality="BARILOCHE", sector=None)
+
+    detail = parse_detail(html, _CODE_A)
+
+    assert detail["city_key"] == "bariloche"
+
+
+def test_detail_heading_municipality_must_agree_with_a_documented_alias() -> None:
+    html = _detail_html(
+        _CODE_A,
+        locality="POBLADO",
+        sector=None,
+        description_heading=("Apartamento en Arriendo – Sector Falso, Itagüí (Piso 1)"),
+    )
+
+    with pytest.raises(PortalDetailError):
+        parse_detail(html, _CODE_A)
+
+
 def test_detail_identity_guard_rejects_other_code() -> None:
     html = _detail_html(_CODE_A)
 
@@ -541,6 +612,41 @@ def test_scrape_cities_groups_by_detail_municipality(monkeypatch) -> None:
     assert by_id[f"LES-{_CODE_C}"]["area"] == 50
     assert len(requested) == 3
     assert all(list(row) == list(COLUMNS) for row in rows["la-estrella"])
+
+
+def test_scrape_cities_publishes_verified_medellin_locality_only(monkeypatch) -> None:
+    rendered = _results(
+        _card(_CODE_A, title_city="SAN ANTONIO DE PRADO"),
+        _card(_CODE_B, title_city="GUAYABAL"),
+        _card(_CODE_C, title_city="BARILOCHE"),
+    )
+    _install_browser(monkeypatch, rendered, (_CODE_A, _CODE_B, _CODE_C))
+    details = {
+        f"{BASE_URL}/propiedad/apartamento-en-arriendo-{_CODE_A}": _detail_html(
+            _CODE_A, locality="SAN ANTONIO DE PRADO", sector="Rosaleda"
+        ),
+        f"{BASE_URL}/propiedad/apartamento-en-arriendo-{_CODE_B}": _detail_html(
+            _CODE_B,
+            locality="GUAYABAL",
+            sector="Guayabal",
+            description_heading=(
+                "Apartamento en Arriendo – Urbanity, Sector Guayabal, Medellín "
+                "(Piso 16)"
+            ),
+        ),
+        f"{BASE_URL}/propiedad/apartamento-en-arriendo-{_CODE_C}": _detail_html(
+            _CODE_C, locality="BARILOCHE", sector=None
+        ),
+    }
+    _install_details(monkeypatch, details)
+
+    rows = scrape_cities(["medellin", "itagui"])
+
+    assert {row["id"] for row in rows["medellin"]} == {
+        f"LES-{_CODE_A}",
+        f"LES-{_CODE_B}",
+    }
+    assert rows["itagui"] == []
 
 
 def test_sale_detail_is_not_published(monkeypatch) -> None:

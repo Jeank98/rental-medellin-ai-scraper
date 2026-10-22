@@ -106,12 +106,54 @@ ignored and a missing property locality fails the detail.
 
 ## City assignment
 
-The detail `address.addressLocality` is normalized with the shared city helper
-and compared to the requested canonical keys. Records from unsupported or
-unrequested municipalities are dropped, and each requested city is present in
-the result dictionary even when its list is empty. This is what prevents the
-unreliable municipal facet (or a card title that names a different city) from
-leaking records into another database scope.
+`address.addressLocality` is one free-text `neighborhood` value, not a
+municipality field: for La Estrella, Itagüí, Sabaneta, and Envigado rows it
+normally contains the municipality, but for Medellín rows it normally contains
+the barrio, comuna, or corregimiento (for example `POBLADO`, `LAURELES`,
+`SAN ANTONIO DE PRADO`).
+
+Resolution therefore uses three primary-evidence steps, in order:
+
+1. An exact supported municipality in `addressLocality` (normalized with the
+   shared city helper) wins. Records for unrequested supported cities are
+   dropped from the requested scopes.
+2. The property's own description title line is read for one supported
+   municipality. The live descriptions put the title before the body, so only
+   that line is inspected: `Sector Guayabal, Medellín (Piso 16)` and
+   `Itagüí, Sector Bariloche (Piso 1)` are primary evidence, while body prose
+   such as `cerca de Envigado` is never consulted. Two different municipalities
+   in that line fail the detail.
+3. An explicit, individually verified Medellín locality alias is used when the
+   title line names no municipality.
+
+The alias table is deliberately closed. Each entry was verified against
+Medellín's official comuna/corregimiento geometry (ArcGIS `Comunas y
+Corregimientos`, `VM_POT48_Base` layer 3) for the live inventory on
+2026-10-22:
+
+| Normalized locality | Official Medellín unit |
+|---|---|
+| `san-antonio-de-prado` | Corregimiento de San Antonio de Prado (comuna 80) |
+| `poblado`, `el-poblado` | El Poblado (comuna 14) |
+| `laureles` | Laureles (comuna 11) |
+| `belen` | Belén (comuna 16) |
+| `belen-rosales` | Rosales, Belén (comuna 16) |
+| `guayabal` | Guayabal (comuna 15) |
+| `america`, `la-america` | La América (comuna 12) |
+| `floresta`, `la-floresta` | La Floresta (comuna 12) |
+| `velodromo`, `el-velodromo` | El Velódromo (comuna 11) |
+| `lopez-de-mesa` | López de Mesa (comuna 7) |
+| `buenos-aires` | Buenos Aires (comuna 9) |
+| `villa-hermosa` | Villa Hermosa (comuna 8) |
+
+Every other label stays unresolved and is logged with its source code; it is
+never assumed to be Medellín. `BARILOCHE`, for example, is an Itagüí sector and
+resolves to `itagui` only because its own title line names Itagüí. Adding a new
+alias requires the same official verification, not a name resemblance.
+
+When the title line and a documented alias disagree, or when an exact
+municipality and the title line disagree, `parse_detail` raises
+`PortalDetailError` instead of publishing a conflicting city.
 
 `scrape_cities` runs discovery once and fetches each detail once for all
 requested cities; `scrape` delegates to it for a single city. A local JSON-LD
@@ -123,9 +165,9 @@ hint. Before any detail is fetched, up to three candidates per requested city
 are allocated from their hints, and leftover slots are filled round-robin from
 cards with no usable hint. The schedule therefore never exceeds three detail
 requests per requested city, and six cards from the first city cannot consume
-the second city's budget. The fetched detail JSON-LD municipality still decides
-where the row is published, so a wrong hint cannot move a listing between
-scopes.
+the second city's budget. The fetched detail's primary municipality resolution
+still decides where the row is published, so a wrong hint cannot move a listing
+between scopes.
 
 ## Verified samples
 
@@ -134,6 +176,9 @@ scopes.
 | 9564 | Itagüí | 2.700.000 | 70 | 3 | 2 | 1 | 4 | Ditaires |
 | 9704 | La Estrella | 2.300.000 | 70 | 3 | 2 | 1 | 3 | Ferrería |
 | 9648 | La Estrella | 1.700.000 | 50 | 2 | 2 | 0 | 3 | *(empty)* |
+| 8187 | Medellín (locality `SAN ANTONIO DE PRADO`) | 1.200.000 | 52 | 2 | 1 | 0 | 3 | Rosaleda |
+| 9454 | Itagüí (locality `ITAGUI SANTA MARIA`, title names Itagüí) | 2.200.000 | 50 | 2 | 1 | 0 | 3 | *(empty)* |
+| 9612 | Medellín (locality `GUAYABAL`, title names Medellín) | 3.000.000 | 42 | 2 | 1 | 1 | 5 | *(empty)* |
 
 The sitemap is stale and is not used for enumeration; card discovery is the
 inventory source.
@@ -158,3 +203,12 @@ inventory source.
 - Cards carry no reliable municipality, so sample mode can fetch up to three
   details per requested city but cannot guarantee inventory coverage for a city
   that appears deeper in the result list.
+- The locality field is free text. A new Medellín barrio that is not in the
+  verified alias table, and whose title line names no municipality, is logged
+  as `unrecognized locality` and excluded from every scope. It is never
+  published as Medellín by resemblance; adding it requires official
+  comuna/corregimiento verification and a regression test.
+- The title-line municipality rule depends on the description keeping its
+  current title-first shape. If the site starts with body prose, a municipality
+  mentioned incidentally could be read as the property's city; that would need
+  a re-probe of the live description format before trusting the rule.

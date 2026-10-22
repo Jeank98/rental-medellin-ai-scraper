@@ -8,8 +8,9 @@ that stops producing cards while its loader image is still visible fails
 instead of being published as a partial snapshot.
 
 Phase B fetches each unique detail page once.  The JSON-LD
-``RealEstateListing`` block is the authoritative source for metrics and the
-municipality used to group rows into the requested city scopes.
+``RealEstateListing`` block is the authoritative source for metrics, and its
+property locality (with the property's own title line and documented Medellín
+locality aliases) determines the municipality used to group rows.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup, NavigableString, Tag
 from playwright.sync_api import Page
 
-from scrape.cities import normalize_city, resolve_city
+from scrape.cities import CITY_LABELS, normalize_city, resolve_city
 from scrape.fetcher import bulk_fetch, stealthy_fetch_with_action
 from scrape.normalize import normalize_estrato
 from scrape.validator import validate
@@ -98,6 +99,46 @@ _INITIAL_CARD_SAMPLES: Final = 20
 
 _STRUCTURAL_REJECTIONS: Final = frozenset(
     {"missing-code", "missing-price", "missing-url"}
+)
+
+# The site stores a single free-text ``neighborhood`` value in
+# ``addressLocality``.  For Medellín it writes the barrio, comuna, or
+# corregimiento instead of the municipality (``POBLADO``, ``LAURELES``,
+# ``SAN ANTONIO DE PRADO``), while every non-Medellín row in the audited
+# inventory writes its municipality (``LA ESTRELLA``, ``ITAGUI``, ``SABANETA``,
+# ``ENVIGADO``) or a compound that starts with it (``ITAGUI SANTA MARIA``).
+# The labels below are the only Medellín localities this adapter will alias.
+# Each one was verified against Medellín's official comuna/corregimiento
+# geometry; an unknown label is never assumed to be Medellín.
+_MEDELLIN_LOCALITIES: Final[dict[str, str]] = {
+    "san-antonio-de-prado": "Corregimiento de San Antonio de Prado (comuna 80)",
+    "poblado": "El Poblado (comuna 14)",
+    "el-poblado": "El Poblado (comuna 14)",
+    "laureles": "Laureles (comuna 11)",
+    "belen": "Belén (comuna 16)",
+    "belen-rosales": "Rosales, Belén (comuna 16)",
+    "guayabal": "Guayabal (comuna 15)",
+    "america": "La América (comuna 12)",
+    "la-america": "La América (comuna 12)",
+    "floresta": "La Floresta (comuna 12)",
+    "la-floresta": "La Floresta (comuna 12)",
+    "velodromo": "El Velódromo (comuna 11)",
+    "el-velodromo": "El Velódromo (comuna 11)",
+    "lopez-de-mesa": "López de Mesa (comuna 7)",
+    "buenos-aires": "Buenos Aires (comuna 9)",
+    "villa-hermosa": "Villa Hermosa (comuna 8)",
+}
+
+# The property's own description starts with its title line, which sometimes
+# names the municipality after the sector (``Sector Guayabal, Medellín``) or
+# before it (``Itagüí, Sector Bariloche``).  Only that title line is read, so
+# prose such as ``cerca de Envigado`` cannot donate a city to another
+# municipality's listing.
+_DESCRIPTION_HEADING_LIMIT: Final = 200
+_MUNICIPALITY_IN_HEADING: Final = re.compile(
+    r"(?<![\w-])(?P<city>medell[ií]n|envigado|itag[uü][ií]|sabaneta|la\s+estrella)"
+    r"(?![\w-])",
+    re.IGNORECASE,
 )
 
 _CARD_HREFS_JS: Final = """
@@ -447,8 +488,8 @@ def _parse_card(card: Tag, code: str, url: str) -> tuple[Listing | None, str]:
 def _card_city_hint(card: Tag) -> str:
     """Read the card's municipality hint from its ``en Arriendo - CITY`` title.
 
-    The hint only schedules which details to sample; the detail JSON-LD
-    ``addressLocality`` stays authoritative for grouping.
+    The hint only schedules which details to sample; the detail page's primary
+    municipality resolution stays authoritative for grouping.
     """
     for line in _lines(card):
         match = re.search(r"\ben\s+arriendo\s*[-–—]\s*(.+)$", line, re.IGNORECASE)
@@ -863,6 +904,69 @@ def _address_locality(node: dict) -> str:
     return ""
 
 
+def _description_heading(node: dict) -> str:
+    """Return the property description's own title line.
+
+    The JSON-LD description is the title followed immediately by the body, so
+    the title is the text up to its first parenthetical floor label.  A title
+    without one is bounded by :data:`_DESCRIPTION_HEADING_LIMIT` so body prose
+    can never be read as a municipality.
+    """
+    description = node.get("description")
+    if not isinstance(description, str):
+        return ""
+    text = " ".join(BeautifulSoup(description, "html.parser").get_text(" ").split())
+    closing = text.find(")")
+    if 0 <= closing < _DESCRIPTION_HEADING_LIMIT:
+        return text[: closing + 1]
+    return text[:_DESCRIPTION_HEADING_LIMIT]
+
+
+def _heading_municipality(node: dict, code: str) -> str:
+    """Read the single municipality named by the property's own title line."""
+    heading = _description_heading(node)
+    cities = {
+        normalize_city(match.group("city"))
+        for match in _MUNICIPALITY_IN_HEADING.finditer(heading)
+    }
+    if len(cities) > 1:
+        raise PortalDetailError(
+            f"{code}: property description names conflicting municipalities "
+            f"{sorted(cities)}"
+        )
+    return next(iter(cities), "")
+
+
+def _detail_city_key(locality: str, node: dict, code: str) -> str:
+    """Resolve the detail page's municipality from primary property content.
+
+    Precedence: a supported municipality in ``addressLocality``; a municipality
+    named by the property's own description title; an individually verified
+    Medellín locality alias.  Anything else stays unresolved instead of being
+    guessed as Medellín, and conflicting primary evidence fails the detail.
+    """
+    key = normalize_city(locality)
+    mentioned = _heading_municipality(node, code)
+    if key in CITY_LABELS:
+        if mentioned and mentioned != key:
+            raise PortalDetailError(
+                f"{code}: addressLocality {locality!r} resolves to {key!r} but "
+                f"the property description names {mentioned!r}"
+            )
+        return key
+    if key in _MEDELLIN_LOCALITIES:
+        if mentioned and mentioned != "medellin":
+            raise PortalDetailError(
+                f"{code}: locality {locality!r} is a verified Medellín "
+                f"locality ({_MEDELLIN_LOCALITIES[key]}) but the property "
+                f"description names {mentioned!r}"
+            )
+        return "medellin"
+    if mentioned:
+        return mentioned
+    return key
+
+
 def _offer_price(node: dict) -> int:
     """Read the current rental price, preferring ``LeaseOut`` over any other offer.
 
@@ -909,7 +1013,7 @@ def parse_detail(html: str, expected_code: str) -> Detail:
         raise PortalDetailError(f"{expected_code}: JSON-LD has no rental price")
     return {
         "ciudad": locality,
-        "city_key": normalize_city(locality),
+        "city_key": _detail_city_key(locality, node, expected_code),
         "operation": _operation(node, soup),
         "precio": precio,
         "area": _floor_size(node),
@@ -1163,6 +1267,13 @@ def _collect_all(
                 f"{card['id']}: detail page is not identifiable as a rental listing"
             )
         city = detail["city_key"]
+        if city not in CITY_LABELS:
+            logger.warning(
+                "%s has unrecognized locality %r; excluded from every scope",
+                card["id"],
+                detail["ciudad"],
+            )
+            continue
         if city not in rows_by_city:
             logger.info("%s is in %s; outside the requested scope", card["id"], city)
             continue
@@ -1228,6 +1339,13 @@ def _collect_sample(
                 f"{card['id']}: detail page is not identifiable as a rental listing"
             )
         city = detail["city_key"]
+        if city not in CITY_LABELS:
+            logger.warning(
+                "%s has unrecognized locality %r; excluded from every scope",
+                card["id"],
+                detail["ciudad"],
+            )
+            continue
         if city not in rows_by_city:
             logger.info("%s is in %s; outside the requested scope", card["id"], city)
             continue
