@@ -22,10 +22,10 @@ def test_sample_only_does_not_write_outputs() -> None:
     details = {
         row["url"]: _load(
             {
-                "ATB-3440": "detail_3440.html",
-                "ATB-4517": "detail_4517.html",
-                "ATB-4571": "detail_4571.html",
-                "ATB-4466": "detail_4466_parking.html",
+                "ATB-3386": "detail_3386.html",
+                "ATB-3824": "detail_3824.html",
+                "ATB-4557": "detail_4557.html",
+                "ATB-367": "detail_367.html",
             }[row["id"]]
         )
         for row in rows

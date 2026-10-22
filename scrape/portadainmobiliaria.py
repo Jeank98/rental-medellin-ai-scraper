@@ -26,7 +26,14 @@ logger = logging.getLogger(__name__)
 PORTAL: Final = "portadainmobiliaria"
 API_BASE: Final = "https://api-crinmo.azurewebsites.net/simi/v2.1.1/filtroInmueble"
 DETAIL_BASE: Final = "https://portadainmobiliaria.com/busqueda/#/inmueble/"
-CITY_ID: Final = 25974
+CITY_IDS: Final[dict[str, int]] = {
+    "medellin": 25974,
+    "envigado": 25999,
+    "itagui": 26001,
+    "sabaneta": 26020,
+    "la estrella": 26021,
+    "la-estrella": 26021,
+}
 OPERATION_ID: Final = 1
 PAGE_SIZE: Final = 12
 MIN_RENT: Final = 500000
@@ -78,11 +85,27 @@ class Listing(TypedDict):
     url: str
 
 
-def build_api_url(page: int, tipo_id: int) -> str:
+def _city_id(ciudad: str) -> int:
+    """Map a municipality name to the API's numeric city id."""
+    key = (
+        str(ciudad).strip().casefold()
+        .replace("í", "i").replace("ü", "u")
+        .replace("á", "a").replace("é", "e").replace("ó", "o")
+    )
+    city_id = CITY_IDS.get(key)
+    if city_id is None:
+        raise ValueError(
+            f"Portada has no verified city id for {ciudad!r}; known: "
+            f"{sorted(set(CITY_IDS.values()))}"
+        )
+    return city_id
+
+
+def build_api_url(page: int, tipo_id: int, ciudad: str = "medellin") -> str:
     """Build the canonical path-based API URL for one residential type."""
     return (
         f"{API_BASE}/limite/{page}/total/{PAGE_SIZE}"
-        f"/ciudad/{CITY_ID}/barrio/0/tipoInm/{tipo_id}"
+        f"/ciudad/{_city_id(ciudad)}/barrio/0/tipoInm/{tipo_id}"
         f"/tipOper/{OPERATION_ID}/valmin/{MIN_RENT}/valmax/{MAX_RENT}"
         "/campo/fecha/precio/0/order/desc/banios/0/alcobas/0/garajes/0"
         "/sede/0/usuario/0"
@@ -108,6 +131,13 @@ def _integer_value(raw) -> int:
 
 def _validate_response(data) -> tuple[list[dict], dict]:
     """Validate a useful API response and reject textual error payloads."""
+    if isinstance(data, str):
+        if data.strip().casefold() == "sin resultados":
+            logger.info("Portada API reported no listings for this type/city")
+            return [], {}
+        raise RuntimeError(
+            f"Portada API returned a non-object payload: {data.strip()[:80]!r}"
+        )
     if not isinstance(data, dict):
         raise RuntimeError("Portada API returned no JSON object")
 
@@ -196,10 +226,10 @@ def _total_pages(metadata: dict) -> int:
     return max(1, math.ceil(total / PAGE_SIZE)) if total else 1
 
 
-def _fetch_page(page: int, tipo_id: int) -> dict:
+def _fetch_page(page: int, tipo_id: int, ciudad: str = "medellin") -> dict:
     """Fetch one type/page response; callers validate before consuming it."""
-    url = build_api_url(page, tipo_id)
-    return fetch_json(url, headers=API_HEADERS)
+    url = build_api_url(page, tipo_id, ciudad)
+    return fetch_json(url, headers=API_HEADERS, allow_scalar=True)
 
 
 def scrape(
@@ -208,16 +238,17 @@ def scrape(
     max_pages: int | None = None,
     verbose: bool = False,
 ) -> list[Listing]:
-    """Scrape Portada's Medellin rental inventory through the REST API."""
-    if ciudad.casefold() not in {"medellin", "medellín"}:
-        raise ValueError("Portada Inmobiliaria only supports Medellin")
+    """Scrape Portada's rental inventory for one verified municipality."""
+    _city_id(ciudad)
     if max_pages is not None and max_pages < 1:
         raise ValueError("max_pages must be at least 1")
 
     all_listings: list[Listing] = []
     for expected_tipo, tipo_id in RESIDENTIAL_TYPES.items():
-        first_response = _fetch_page(1, tipo_id)
+        first_response = _fetch_page(1, tipo_id, ciudad)
         _items, metadata = _validate_response(first_response)
+        if not _items:
+            continue
         total_pages = _total_pages(metadata)
         if max_pages is not None:
             total_pages = min(total_pages, max_pages)
@@ -228,7 +259,7 @@ def scrape(
             response = (
                 first_response
                 if page == 1
-                else _fetch_page(page, tipo_id)
+                else _fetch_page(page, tipo_id, ciudad)
             )
             page_listings = parse_search_response(response, expected_tipo)
             all_listings.extend(page_listings)

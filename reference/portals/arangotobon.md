@@ -1,78 +1,96 @@
 # Arango Tobón Inmobiliaria (`ATB`)
 
-- **URL**: `https://www.arangotobon.com/inmuebles/Arriendo/clases_Apartamento_Apto-Loft_Apartaestudio_Casa/municipios_Medell%C3%ADn/`
-- **Type**: Server-rendered HTML (ASP.NET MVC)
+- **URL**: `https://arangotobon.com/todas-las-propiedades/?destinacion=Arriendo&municipio=medellin`
+- **Municipalities**: `medellin`, `envigado`, `itagui`, `sabaneta`, `la-estrella`
+  (verified slugs of the site's own `municipio` filter; the scraper raises
+  `UnsupportedCityError` for anything else)
+- **Type**: Server-rendered WordPress theme (GET form filters + `pag` pagination)
 - **Portal**: `arangotobon`
 - **Strategy**: Two-phase HTML with detail enrichment
-- **Card selector**: `.property_item`
-- **Detail page**: `/inmueble/{code}-{slug}`
-- **Pagination**: Page 1 is the search URL; later pages append `/2`, `/3`, etc.
-- **Observed inventory**: 52 results across four pages (16, 16, 16, 4); page 5 is empty.
+- **Card selector**: `.at-dest2-card`
+- **Detail page**: `/inmueble/{code}/`
+- **Pagination**: `&pag=2`, `&pag=3`, … page 1 has no `pag` param; 12 cards per page
+- **Observed inventory**: 98 arriendo results in Medellín across ~9 pages
 
-## Search Filters
+## Migration Note (2026-10)
 
-The confirmed rental route combines four residential source classes with `_`:
+The portal replaced its ASP.NET MVC site with WordPress. The old routes
+(`/inmuebles/Arriendo/clases_…/municipios_Medellín/`, `/inmueble/{code}-{slug}`)
+now return HTTP 404; `www.arangotobon.com` 301-redirects to the apex host. The
+inventory lives behind a GET form on `/todas-las-propiedades/` with these
+params: `destinacion` (`Arriendo`/`Venta`), `clase`, `municipio`, `barrio`,
+`alcobas`, `banos`, `orden`, `codigo`, `estrato`, `garaje`, `min_precio`,
+`max_precio`, `caract[]`.
 
-`clases_Apartamento_Apto-Loft_Apartaestudio_Casa`
+`clase` accepts a single value only — a comma-joined list returns zero results.
+The scraper therefore fetches the unfiltered `destinacion=Arriendo&municipio=medellin`
+stream and keeps residential classes client-side.
 
-The current observed class counts are 33 `Apartamento`, 2 `Apto-Loft`, 9
-`Apartaestudio`, and 8 `Casa`. The root URL and `/1` return the same page;
-do not scrape both.
-
-The portal JavaScript also builds route segments for price, bedrooms,
-bathrooms, and features such as `Garaje`, `Ascensor`, `Piscina`, and
-`amoblado`. A source bug omits a slash after `banos_N`, so a combined
-`banos_1Garaje` route is not reliable. The scraper uses the confirmed
-residential route and does not synthesize additional filter combinations.
+Observed class counts (Medellín, arriendo): apartamento 40, apartaestudio 8,
+apto-loft 3, casa 7; the remaining results are bodega, local, oficina, etc.
 
 ## Phase A: Search Cards
 
-Deduplicate the title/image anchors inside each `.property_item` by their
-canonical detail URL. The first slug token is the stable numeric source code;
-compose `ATB-{code}`. Card fields are:
+Cards are fully server-rendered; no JS or AJAX call is needed. Identity comes
+from the numeric code in the detail URL and in the `COD:` chip.
 
 | Column | Source | Handling |
 |---|---|---|
-| `id` | Numeric token after `/inmueble/` | Compose `ATB-{code}` |
+| `id` | `/inmueble/{code}/` (onclick or `.at-dest2-card-btn`) | Compose `ATB-{code}` |
 | `portal` | Fixed | `arangotobon` |
-| `tipo` | Card `h3` | Normalize; `Apto-Loft` becomes `apartaestudio` |
-| `precio` | `.favroute2 p` | Shared price normalizer |
-| `area` | `.property_meta` metric containing `m2` | Integer |
-| `habitaciones` | `.property_meta` metric containing `Alcobas` | Integer |
-| `banos` | `.property_meta` metric containing `Baños` | Integer; `1.0` becomes `1` |
-| `parqueaderos` | Absent from sampled cards | Keep `0` |
+| `tipo` | Second `.at-dest2-tag` (e.g. `Apartamento`) | `apto-loft` becomes `apartaestudio` |
+| `precio` | `.at-dest2-price` (`$1.800.000 /mes`) | Shared price normalizer drops the `/mes` suffix |
+| `area` | `.at-dest2-area` (`75 m²`) | Integer |
+| `habitaciones` | Absent from cards | Keep `0` until Phase B |
+| `banos` | Absent from cards | Keep `0` until Phase B |
+| `parqueaderos` | Absent from cards | Keep `0` until Phase B |
 | `estrato` | Absent from cards | Keep `0` until Phase B |
-| `barrio` | Card location heading | Provisional only; replace with detail value |
-| `url` | Detail anchor | Absolute official URL |
+| `barrio` | `.at-dest2-location` (icon label must be skipped) | Provisional; detail value wins |
+| `url` | Card onclick / CTA anchor | Absolute official URL |
 
-`Apto-Loft` is a distinct portal class, but the two sampled details call it
-`Apartaestudio tipo loft`; normalize it to `apartaestudio` for the contract.
+Only `Arriendo` cards whose class normalizes to `apartamento`, `casa`, or
+`apartaestudio` are kept.
+
+The results counter lives in `p.at-ti2-count`:
+`Mostrando <strong>1–12</strong> de <strong>40</strong> propiedades`. The last
+`<strong>` is the total and drives page-count estimation; pagination also stops
+when a page yields no new IDs.
 
 ## Phase B: Detail Pages
 
-Fetch every accepted card URL with `bulk_fetch`. Merge only detail fields
-whose `Código` matches the card code:
+Fetch every accepted card URL with `bulk_fetch`. Merge only detail fields whose
+`COD:` chip matches the card code:
 
 | Column | Detail source |
 |---|---|
-| `estrato` | Table row `Estrato` |
-| `barrio` | Table row `Barrio` |
-| `parqueaderos` | `ul.bloques li` explicitly labelled `Parqueadero`/`Garaje` only |
+| `area` | `.at-sd-feat` pill labelled `m²` (only if the card had none) |
+| `habitaciones` | Pill labelled `Alcobas` |
+| `banos` | Pill labelled `Baños` |
+| `parqueaderos` | Pill labelled `Parqueaderos`/`Garaje` |
+| `estrato` | Pill labelled `Estrato` |
+| `barrio` | `.at-sd-loc`, first comma-separated segment |
 
-The detail parser also reads the labelled `Baños` and `Alcobas` blocks for
-verification, but card values remain authoritative for those fields. Narrative
-mentions such as `parqueadero privado` are ignored. A successful detail without
-a structured parking label proves the source absence and keeps
-`parqueaderos = 0`.
+The feature pills carry Material Symbols icon labels (`bed`, `bathtub`,
+`straighten`, `directions_car`, `location_city`); the icon text must be skipped
+before reading the label. The same `.at-sd-feat` class is reused for amenities
+and for the "Sector" block, so only the numeric field labels are accepted —
+`Parques Cercanos` must not be read as parking.
+
+The detail page also renders `Canon mensual` in `.at-sd-price-val`, useful for
+verification but not authoritative: card prices come from the search stream.
 
 Detail failures retain card values and defaults. Code mismatches are ignored
 without changing the card identity.
 
 ## Zero-Genuineness and Risks
 
-- `parqueaderos = 0` is genuine when the detail has no structured parking label.
-- `estrato = 0` remains possible when a detail omits the table row.
-- Root versus `/1` and duplicate title/image anchors require ID/URL deduplication.
-- Slugs may change; the numeric code is the identity.
-- The site is Cloudflare-fronted and should use the shared retrying fetcher.
-- Detail narrative can disagree with structured data; structured labels win.
+- `parqueaderos = 0` is genuine when the detail has no parking pill; observed on
+  8 of 12 sampled apartamento details.
+- `estrato = 0` remains possible when a detail omits the estrato pill.
+- Card and detail prices can differ (e.g. detail `$2.600.000` for a card at
+  `$1.800.000`); the card value is what the search stream advertises.
+- Detail `barrio` may add a sector clause after a comma (`Belen los alpes, Cerca
+  universidad medellin`); keep only the first segment.
+- The apex host serves the site; `www` only redirects.
+- The site sits behind LiteSpeed/Cloudflare caching; use the shared retrying
+  fetcher.

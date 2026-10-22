@@ -90,7 +90,7 @@ active row for that portal and city:
 | `scripts/scrape_santillana.py --reuse-unchanged-details` | Santillana | `area`, `habitaciones`, `banos`, `parqueaderos`, `estrato`, `barrio` |
 | `scripts/scrape_arrendamientoselcastillo.py --reuse-unchanged-details` | El Castillo | `estrato` |
 | `scripts/scrape_zitios.py --reuse-unchanged-details` | Zitios | `area`, `habitaciones`, `banos`, `parqueaderos`, `estrato`, `barrio` |
-| `scripts/scrape_arangotobon.py --reuse-unchanged-details` | Arango Tobón | `parqueaderos`, `estrato`, `barrio` |
+| `scripts/scrape_arangotobon.py --reuse-unchanged-details` | Arango Tobón | `habitaciones`, `banos`, `parqueaderos`, `estrato`, `barrio` |
 | `scripts/scrape_panoramainmobiliario.py --reuse-unchanged-details` | Panorama Inmobiliario | `area`, `habitaciones`, `banos`, `parqueaderos`, `estrato`, `barrio` |
 | `scripts/scrape_lapalma.py --reuse-unchanged-details` | La Palma | `estrato`, `barrio` |
 | `scripts/scrape_alnago.py --reuse-unchanged-details` | Alnago | `tipo`, `area`, `parqueaderos`, `estrato` |
@@ -105,6 +105,38 @@ The flag never changes the atomic DB replacement contract, and a database-read
 failure logs a warning before performing a complete detail scrape.
 Use `--sample-only` first: it reads the prior snapshot but writes no CSV,
 database, or Sheets output.
+
+## Municipality runs
+
+Per-portal CLIs scrape portals that expose more than Medellín **one municipality per
+invocation**; `ciudad` is stored as the real municipality and the DB snapshot
+replacement is scoped to `(portal, ciudad)`, so `--ciudad envigado` never
+touches Medellín rows.
+
+```bash
+uv run python scripts/scrape_arangotobon.py --output db --ciudad envigado
+uv run python scripts/scrape_zitios.py --output db --ciudad sabaneta
+```
+
+Verified today: `arangotobon` (medellin, envigado, itagui, sabaneta,
+la-estrella), `zitios` (medellin, envigado, itagui, sabaneta; La Estrella's
+slug is still unknown), `maxibienes`, `panoramainmobiliario`, `lapalma`,
+`portadainmobiliaria` and `coninsa` (all four south municipalities), plus
+`totalbienes` (medellin and itagui only — the rest 404). These verified adapters
+reject unsupported municipalities.
+
+This is not a global CLI guarantee: several Medellín-only adapters ignore
+`--ciudad`. Keep `scripts/run_all.py` on its default municipality; use verified
+per-portal commands or the selected multi-city runner for southern cities.
+
+Still pending: `metrocasas` (`location[]={municipio}-antioquia` responds but the
+card filter is unconfirmed) and `proser` (no municipality parameter found).
+
+Use `uv run python scripts/export_to_sheets.py` **without city or portal filters**
+for the existing shared mirror. Deliberately scoped exports may use `--city` or
+`--cities` (the latter takes precedence). Matching uses stored lowercase keys,
+including `la-estrella`, not display names such as `La Estrella`. Empty `ciudad`
+rows are excluded only from city-scoped exports.
 
 ## Phase and failure matrix
 
@@ -124,7 +156,12 @@ healthy portal sample must prove that extraction returned data.
 ## Backup and restore
 
 Backups are written by `pg_dump` to `~/Projects/Backups` by default, with names
-such as `rental_scraper_YYYYMMDD_HHMMSS.sql`. The JSON report keeps the legacy
+such as `rental_scraper_YYYYMMDD_HHMMSS.sql`. After a successful dump the
+orchestrator keeps only the three newest `rental_scraper_*.sql` files and
+deletes older ones (`BACKUP_RETENTION` in `scrape/orchestrator.py`); unrelated
+`.sql` files in that directory are never touched, and a failed dump deletes
+nothing. A current dump of the full listings database is roughly 2 MB.
+The JSON report keeps the legacy
 `backup_path` field and also records `backup.status`, `backup.path`,
 `backup.error`, and `backup.reason`.
 

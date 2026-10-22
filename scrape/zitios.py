@@ -23,6 +23,12 @@ from scrape.normalize import (
 logger = logging.getLogger(__name__)
 
 _BASE = "https://zitios.com.co"
+_CITY_SLUGS = {
+    "medellin": "medell%C3%ADn",
+    "envigado": "envigado",
+    "itagui": "itagui",
+    "sabaneta": "sabaneta",
+}
 _SEARCH_URL = f"{_BASE}/inmuebles/g/arriendo/c/medell%C3%ADn/"
 _RESIDENTIAL_ROUTES = ("apartamentos", "casas", "apartaestudios")
 _RESIDENTIAL_TYPES = frozenset(("apartamento", "casa", "apartaestudio"))
@@ -43,10 +49,39 @@ _DETAIL_FIELDS = (
 _PRESERVE_CURRENT_FIELDS = frozenset(("barrio",))
 
 
-def _page_url(page: int, property_type: str | None = None) -> str:
-    search_url = _SEARCH_URL
-    if property_type is not None:
-        search_url = f"{_BASE}/inmuebles/g/arriendo/t/{property_type}/c/medell%C3%ADn/"
+class UnsupportedCityError(KeyError):
+    """Raised when Zitios has no verified route for the requested municipality."""
+
+
+def _city_slug(ciudad: str) -> str:
+    """Map a municipality name to its verified Zitios route slug."""
+    key = (
+        ciudad.strip().casefold()
+        .replace("í", "i")
+        .replace("ü", "u")
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("ó", "o")
+    )
+    slug = _CITY_SLUGS.get(key)
+    if slug is None:
+        raise UnsupportedCityError(
+            f"Zitios has no verified route for {ciudad!r}; known: "
+            f"{sorted(_CITY_SLUGS)}"
+        )
+    return slug
+
+
+def _page_url(
+    page: int,
+    property_type: str | None = None,
+    ciudad: str = "medellin",
+) -> str:
+    slug = _city_slug(ciudad)
+    if property_type is None:
+        search_url = f"{_BASE}/inmuebles/g/arriendo/c/{slug}/"
+    else:
+        search_url = f"{_BASE}/inmuebles/g/arriendo/t/{property_type}/c/{slug}/"
     return search_url if page <= 1 else f"{search_url}?pagina={page}"
 
 
@@ -321,7 +356,8 @@ def scrape(
     verbose: bool = False,
     reuse_unchanged_details: bool = False,
 ) -> list[Listing]:
-    """Scrape Zitios Medellín rentals through bounded pagination and details."""
+    """Scrape Zitios rentals for one verified municipality in two phases."""
+    _city_slug(ciudad)
     page_limit = (
         _TOTAL_PAGES
         if max_pages is None
@@ -333,7 +369,7 @@ def scrape(
     by_id: dict[str, Listing] = {}
     for property_type in _RESIDENTIAL_ROUTES:
         for page in range(1, page_limit + 1):
-            html = fetch_page(_page_url(page, property_type)) or ""
+            html = fetch_page(_page_url(page, property_type, ciudad)) or ""
             page_rows = parse_search_page(html)
             if not page_rows:
                 break

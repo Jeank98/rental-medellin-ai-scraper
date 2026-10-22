@@ -1,4 +1,4 @@
-"""Fixture-backed tests for the Arango Tobon two-phase scraper."""
+"""Fixture-backed tests for the Arango Tobon two-phase scraper (WordPress site)."""
 
 from pathlib import Path
 from unittest import mock
@@ -6,12 +6,15 @@ from unittest import mock
 from scrape.arangotobon import (
     COLUMNS,
     PREFIX,
+    SEARCH_URL,
+    UnsupportedCityError,
     build_page_url,
+    count_cards,
     merge_detail,
     parse_detail_page,
     parse_search_page,
+    parse_total_results,
     scrape,
-    UnsupportedCityError,
 )
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "arangotobon"
@@ -21,13 +24,13 @@ def _load(name: str) -> str:
     return (FIXTURES / name).read_text(encoding="utf-8")
 
 
-def test_build_page_url_uses_canonical_root_and_route_pages() -> None:
+def test_build_page_url_uses_canonical_search_route_and_pag_param() -> None:
+    assert build_page_url(1) == SEARCH_URL
     assert build_page_url(1) == (
-        "https://www.arangotobon.com/inmuebles/Arriendo/"
-        "clases_Apartamento_Apto-Loft_Apartaestudio_Casa/"
-        "municipios_Medell%C3%ADn/"
+        "https://arangotobon.com/todas-las-propiedades/"
+        "?destinacion=Arriendo&municipio=medellin"
     )
-    assert build_page_url(4).endswith("municipios_Medell%C3%ADn/4")
+    assert build_page_url(3).endswith("&pag=3")
 
 
 def test_build_page_url_rejects_unconfirmed_city() -> None:
@@ -39,97 +42,100 @@ def test_build_page_url_rejects_unconfirmed_city() -> None:
         raise AssertionError("Expected unsupported city to be rejected")
 
 
-def test_search_parser_maps_all_residential_classes_and_deduplicates_anchors() -> None:
+def test_build_page_url_covers_verified_metro_municipalities() -> None:
+    assert build_page_url(1, "envigado").endswith("municipio=envigado")
+    assert build_page_url(2, "Itagüí").endswith("municipio=itagui&pag=2")
+    assert build_page_url(1, "Sabaneta").endswith("municipio=sabaneta")
+    assert build_page_url(1, "La Estrella").endswith("municipio=la-estrella")
+
+
+def test_search_parser_maps_residential_cards_and_skips_other_classes() -> None:
     rows = parse_search_page(_load("search_page.html"))
 
     assert [row["id"] for row in rows] == [
-        f"{PREFIX}-3440",
-        f"{PREFIX}-4517",
-        f"{PREFIX}-4571",
-        f"{PREFIX}-4466",
+        f"{PREFIX}-3386",
+        f"{PREFIX}-3824",
+        f"{PREFIX}-4557",
+        f"{PREFIX}-367",
     ]
-    assert [row["tipo"] for row in rows] == [
-        "apartaestudio",
-        "apartamento",
-        "apartaestudio",
-        "casa",
+    assert {row["tipo"] for row in rows} == {"apartamento"}
+    assert [row["precio"] for row in rows] == [1800000, 2000000, 2100000, 2400000]
+    assert [row["area"] for row in rows] == [75, 70, 55, 65]
+    assert [row["barrio"] for row in rows] == [
+        "Belen Los Alpes",
+        "Belen Los Alpes",
+        "Floridanueva",
+        "San Joaquin",
     ]
-    assert [row["precio"] for row in rows] == [1400000, 1900000, 2750000, 3500000]
-    assert [row["area"] for row in rows] == [35, 40, 22, 120]
-    assert [row["habitaciones"] for row in rows] == [1, 2, 1, 3]
-    assert [row["banos"] for row in rows] == [1, 1, 1, 3]
     assert all(row["parqueaderos"] == 0 for row in rows)
+    assert all(row["portal"] == "arangotobon" for row in rows)
     assert all(list(row) == COLUMNS for row in rows)
     assert len({row["url"] for row in rows}) == len(rows)
 
 
-def test_detail_parser_adds_structured_fields_and_only_structured_parking() -> None:
-    detail = parse_detail_page(_load("detail_3440.html"))
+def test_search_page_counter_and_card_count_are_readable() -> None:
+    search = _load("search_page.html")
+
+    assert parse_total_results(search) == 40
+    assert count_cards(search) == 5
+    assert parse_total_results(_load("empty_page.html")) == 0
+    assert count_cards(_load("empty_page.html")) == 0
+    assert parse_search_page(_load("empty_page.html")) == []
+
+
+def test_detail_parser_reads_features_and_structured_parking() -> None:
+    detail = parse_detail_page(_load("detail_1748.html"))
+
     assert detail == {
-        "codigo": "3440",
-        "tipo": "apartaestudio",
-        "precio": 1400000,
-        "area": 35,
-        "habitaciones": 1,
-        "banos": 1,
-        "parqueaderos": 0,
+        "codigo": "1748",
+        "tipo": "apartamento",
+        "precio": 2600000,
+        "area": 62,
+        "habitaciones": 2,
+        "banos": 2,
+        "parqueaderos": 1,
         "estrato": 4,
-        "barrio": "Laureles",
+        "barrio": "Belen Fatima",
     }
 
-    loft = parse_detail_page(_load("detail_4571.html"))
-    assert loft["tipo"] == "apartaestudio"
-    assert loft["estrato"] == 4
-    assert loft["barrio"] == "Belen Fatima"
-
-    parking = parse_detail_page(_load("detail_4466_parking.html"))
-    assert parking["parqueaderos"] == 2
-
-
-def test_dual_prices_keep_only_rental_side_within_postgres_integer_range() -> None:
-    search_rows = parse_search_page(_load("search_page_dual_prices.html"))
-    expected_prices = {
-        "ATB-4553": 3000000,
-        "ATB-4120": 4000000,
-        "ATB-4038": 4100000,
-        "ATB-4467": 15000000,
-    }
-
-    assert {row["id"]: row["precio"] for row in search_rows} == expected_prices
-    assert all(0 <= row["precio"] <= 2_147_483_647 for row in search_rows)
-
-    detail_files = {
-        "ATB-4553": "detail_4553_dual.html",
-        "ATB-4120": "detail_4120_dual.html",
-        "ATB-4038": "detail_4038_dual.html",
-        "ATB-4467": "detail_4467_dual.html",
-    }
-    detail_prices = {
-        listing_id: parse_detail_page(_load(filename))["precio"]
-        for listing_id, filename in detail_files.items()
-    }
-
-    assert detail_prices == expected_prices
-    assert all(0 <= price <= 2_147_483_647 for price in detail_prices.values())
+    no_parking = parse_detail_page(_load("detail_3386.html"))
+    assert no_parking["parqueaderos"] == 0
+    assert no_parking["estrato"] == 3
+    assert no_parking["habitaciones"] == 2
+    assert no_parking["banos"] == 1
+    assert no_parking["barrio"] == "Belen Los Alpes"
 
 
 def test_merge_detail_rejects_code_mismatch_without_changing_identity() -> None:
     row = parse_search_page(_load("search_page.html"))[0]
-    detail = parse_detail_page(_load("detail_4517.html"))
+    detail = parse_detail_page(_load("detail_9999_mismatch.html"))
 
     assert merge_detail(row, detail) is False
-    assert row["id"] == "ATB-3440"
+    assert row["id"] == f"{PREFIX}-3386"
     assert row["estrato"] == 0
+    assert row["habitaciones"] == 0
+
+
+def test_merge_detail_fills_detail_only_fields() -> None:
+    row = parse_search_page(_load("search_page.html"))[0]
+    detail = parse_detail_page(_load("detail_3386.html"))
+
+    assert merge_detail(row, detail) is True
+    assert row["habitaciones"] == 2
+    assert row["banos"] == 1
+    assert row["estrato"] == 3
+    assert row["parqueaderos"] == 0
+    assert row["precio"] == 1800000
 
 
 def test_scrape_deduplicates_stale_pages_fetches_details_and_merges() -> None:
     search = _load("search_page.html")
     parsed = parse_search_page(search)
     detail_names = {
-        "3440": "detail_3440.html",
-        "4517": "detail_4517.html",
-        "4571": "detail_4571.html",
-        "4466": "detail_4466_parking.html",
+        "3386": "detail_3386.html",
+        "3824": "detail_3824.html",
+        "4557": "detail_4557.html",
+        "367": "detail_367.html",
     }
     detail_map = {
         row["url"]: _load(detail_names[row["id"].split("-", 1)[1]])
@@ -147,11 +153,8 @@ def test_scrape_deduplicates_stale_pages_fetches_details_and_merges() -> None:
     details.assert_called_once()
     assert len(rows) == 4
     assert len({row["id"] for row in rows}) == 4
-    assert {row["estrato"] for row in rows} == {3, 4, 5}
-    assert rows[-1]["parqueaderos"] == 2
+    assert all(row["estrato"] > 0 for row in rows)
     assert all(list(row) == COLUMNS for row in rows)
-
-
 
 
 def test_scrape_reuses_unchanged_detail_fields_and_fetches_only_price_misses(
@@ -160,10 +163,10 @@ def test_scrape_reuses_unchanged_detail_fields_and_fetches_only_price_misses(
     search = _load("search_page.html")
     reused, changed, *new_rows = parse_search_page(search)
     detail_names = {
-        "3440": "detail_3440.html",
-        "4517": "detail_4517.html",
-        "4571": "detail_4571.html",
-        "4466": "detail_4466_parking.html",
+        "3386": "detail_3386.html",
+        "3824": "detail_3824.html",
+        "4557": "detail_4557.html",
+        "367": "detail_367.html",
     }
     details = {
         row["url"]: _load(detail_names[row["id"].split("-", 1)[1]])
@@ -172,6 +175,8 @@ def test_scrape_reuses_unchanged_detail_fields_and_fetches_only_price_misses(
     previous = {
         reused["id"]: {
             **reused,
+            "habitaciones": 4,
+            "banos": 3,
             "estrato": 6,
             "barrio": "Anterior",
             "parqueaderos": 2,
@@ -195,7 +200,10 @@ def test_scrape_reuses_unchanged_detail_fields_and_fetches_only_price_misses(
     by_id = {row["id"]: row for row in rows}
     assert by_id[reused["id"]]["estrato"] == 6
     assert by_id[reused["id"]]["barrio"] == "Anterior"
+    assert by_id[reused["id"]]["habitaciones"] == 4
     assert by_id[reused["id"]]["parqueaderos"] == 2
+
+
 def test_scrape_keeps_card_defaults_when_detail_fails() -> None:
     with mock.patch(
         "scrape.arangotobon.fetch_page", return_value=_load("search_page.html")
@@ -205,3 +213,4 @@ def test_scrape_keeps_card_defaults_when_detail_fails() -> None:
     assert len(rows) == 4
     assert all(row["estrato"] == 0 for row in rows)
     assert all(row["parqueaderos"] == 0 for row in rows)
+    assert all(row["precio"] > 0 for row in rows)

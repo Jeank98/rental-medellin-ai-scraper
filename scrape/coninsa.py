@@ -30,10 +30,35 @@ _COLUMNS = [
 
 _PAGE_SIZE = 200
 
-_GRAPHQL_QUERY = """query SearchProperties($offset: Int!, $limit: Int!) {
+_CITY_NAMES = {
+    "medellin": "Medellin",
+    "envigado": "Envigado",
+    "itagui": "Itagui",
+    "sabaneta": "Sabaneta",
+    "la estrella": "La Estrella",
+    "la-estrella": "La Estrella",
+}
+
+
+def _city_name(ciudad: str) -> str:
+    """Map a municipality to the name the Search API's fulltext expects."""
+    key = (
+        str(ciudad).strip().casefold()
+        .replace("í", "i").replace("ü", "u")
+        .replace("á", "a").replace("é", "e").replace("ó", "o")
+    )
+    name = _CITY_NAMES.get(key)
+    if name is None:
+        raise ValueError(
+            f"Coninsa has no verified fulltext for {ciudad!r}; known: "
+            f"{sorted(set(_CITY_NAMES.values()))}"
+        )
+    return name
+
+_GRAPHQL_TEMPLATE = """query SearchProperties($offset: Int!, $limit: Int!) {
   searchAPISearch(
     index_id: "search_properties",
-    fulltext: {keys: "Medellin"},
+    fulltext: {keys: "%s"},
     conditions: [
       {name: "field_service_type", value: "AR", operator: "EQUAL"}
     ],
@@ -108,12 +133,13 @@ def scrape(
     """Scrape Coninsa rental listings via GraphQL Search API.
 
     Queries the Drupal Search API index for all Arriendo (AR) listings
-    in Medellin, then filters to residential types (Apartamento, Casa).
+    in the requested municipality, then filters to residential types (Apartamento, Casa).
     Paginates through all results using offset/limit.
 
     Returns:
         List of 11-column listing dicts.
     """
+    city_name = _city_name(ciudad)
     listings = []
     offset = 0
     total = 0
@@ -122,7 +148,7 @@ def scrape(
 
     while True:
         variables = {"offset": offset, "limit": _PAGE_SIZE}
-        result = _fetch_graphql(_GRAPHQL_QUERY, variables)
+        result = _fetch_graphql(_GRAPHQL_TEMPLATE % city_name, variables)
 
         if not result or "data" not in result:
             logger.error("GraphQL query failed at offset %d", offset)

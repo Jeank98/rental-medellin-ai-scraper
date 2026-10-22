@@ -1,4 +1,5 @@
 # Total Bienes SAS (`TB`)
+- **Municipalities** (route suffix): `medellin` and `itagui` only; the other municipalities 404 on every variant tested
 
 - **Residential type URLs**:
   - `https://totalbienes.com/arriendo-apartamentos-medellin`

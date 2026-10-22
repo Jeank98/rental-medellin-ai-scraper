@@ -19,15 +19,44 @@ from scrape.validator import validate
 logger = logging.getLogger(__name__)
 
 BASE_URL: Final = "https://totalbienes.com"
-RESIDENTIAL_TYPE_URLS: Final[tuple[str, ...]] = (
-    f"{BASE_URL}/arriendo-apartamentos-medellin",
-    f"{BASE_URL}/arriendo-casas-medellin",
-    f"{BASE_URL}/arriendo-apartaestudios-medellin",
-)
-CANONICAL_PAGE_URLS: Final[tuple[str, ...]] = (
-    f"{BASE_URL}/properties/medellin",
-    f"{BASE_URL}/properties/medellin/pagina/2",
-)
+_CITY_SLUGS: Final[dict[str, str]] = {
+    "medellin": "medellin",
+    "itagui": "itagui",
+}
+
+
+def _city_slug(ciudad: str) -> str:
+    """Return the verified route slug for the municipality."""
+    key = (
+        str(ciudad).strip().casefold()
+        .replace("í", "i").replace("ü", "u")
+        .replace("á", "a").replace("é", "e").replace("ó", "o")
+    )
+    slug = _CITY_SLUGS.get(key)
+    if slug is None:
+        raise ValueError(
+            f"Total Bienes has no verified route for {ciudad!r}; known: "
+            f"{sorted(_CITY_SLUGS.values())}"
+        )
+    return slug
+
+
+def _residential_type_urls(slug: str) -> tuple[str, ...]:
+    return tuple(
+        f"{BASE_URL}/arriendo-{kind}-{slug}"
+        for kind in ("apartamentos", "casas", "apartaestudios")
+    )
+
+
+def _canonical_page_urls(slug: str) -> tuple[str, ...]:
+    return (
+        f"{BASE_URL}/properties/{slug}",
+        f"{BASE_URL}/properties/{slug}/pagina/2",
+    )
+
+
+RESIDENTIAL_TYPE_URLS: Final[tuple[str, ...]] = _residential_type_urls("medellin")
+CANONICAL_PAGE_URLS: Final[tuple[str, ...]] = _canonical_page_urls("medellin")
 RESIDENTIAL_TYPES: Final[frozenset[str]] = frozenset(
     {"apartamento", "casa", "apartaestudio"}
 )
@@ -282,12 +311,18 @@ def parse_search_page(html: str) -> list[Listing]:
     return deduplicate_listings(rows)
 
 
-def _source_urls(sample_only: bool, max_pages: int | None) -> tuple[str, ...]:
+def _source_urls(
+    sample_only: bool,
+    max_pages: int | None,
+    ciudad: str = "medellin",
+) -> tuple[str, ...]:
     """Build residential-prefilter sources plus the bounded city pages."""
-    page_limit = 1 if sample_only and max_pages is None else len(CANONICAL_PAGE_URLS)
+    slug = _city_slug(ciudad)
+    canonical = _canonical_page_urls(slug)
+    page_limit = 1 if sample_only and max_pages is None else len(canonical)
     if max_pages is not None:
         page_limit = min(page_limit, max(0, max_pages))
-    return (*RESIDENTIAL_TYPE_URLS, *CANONICAL_PAGE_URLS[:page_limit])
+    return (*_residential_type_urls(slug), *canonical[:page_limit])
 
 
 def scrape(
@@ -296,15 +331,11 @@ def scrape(
     max_pages: int | None = None,
     verbose: bool = False,
 ) -> list[Listing]:
-    """Scrape Total Bienes' finite numbered Medellin rental inventory."""
-    if ciudad.casefold() not in {"medellin", "medellín"}:
-        logger.warning(
-            "Total Bienes canonical inventory is Medellin only, not %s", ciudad
-        )
-        return []
+    """Scrape Total Bienes' finite numbered rental inventory for one city."""
+    _city_slug(ciudad)
 
     rows: list[Listing] = []
-    for source_number, url in enumerate(_source_urls(sample_only, max_pages), start=1):
+    for source_number, url in enumerate(_source_urls(sample_only, max_pages, ciudad), start=1):
         html = fetch_page(url)
         if not html:
             logger.warning("Failed to fetch Total Bienes source %d", source_number)

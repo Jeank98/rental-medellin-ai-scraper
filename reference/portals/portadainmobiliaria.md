@@ -1,6 +1,7 @@
 # Portada Inmobiliaria (`POR`)
 
 - **URL**: `https://portadainmobiliaria.com/busqueda/`
+- **Municipalities** (`/ciudad/{id}/`): medellin 25974, envigado 25999, itagui 26001, sabaneta 26020, la estrella 26021
 - **API**: `https://api-crinmo.azurewebsites.net/simi/v2.1.1/filtroInmueble`
 - **Type**: REST API consumed by the public Vue application
 - **Listings per page**: 12

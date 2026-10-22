@@ -6,6 +6,7 @@ from unittest import mock
 from scrape.zitios import (
     DetailFields,
     Listing,
+    UnsupportedCityError,
     _merge_detail,
     _page_url,
     parse_detail_page,
@@ -39,6 +40,25 @@ def test_page_url_uses_verified_four_page_route() -> None:
         "https://zitios.com.co/inmuebles/g/arriendo/t/apartamentos/c/medell%C3%ADn/"
     )
     assert _page_url(4, "casas").endswith("?pagina=4")
+
+
+def test_page_url_supports_verified_metro_municipalities() -> None:
+    assert _page_url(1, None, "envigado") == (
+        "https://zitios.com.co/inmuebles/g/arriendo/c/envigado/"
+    )
+    assert _page_url(1, "apartamentos", "Itagüí") == (
+        "https://zitios.com.co/inmuebles/g/arriendo/t/apartamentos/c/itagui/"
+    )
+    assert _page_url(2, "casas", "sabaneta").endswith("/c/sabaneta/?pagina=2")
+
+
+def test_page_url_rejects_unverified_municipality() -> None:
+    try:
+        _page_url(1, None, "la estrella")
+    except UnsupportedCityError:
+        pass
+    else:
+        raise AssertionError("Expected La Estrella to be rejected until its slug is known")
 
 
 def test_search_parser_filters_non_residential_and_uses_slug_type() -> None:

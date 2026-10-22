@@ -1,6 +1,7 @@
 # Coninsa (`CON`)
 
 - **URL**: `https://www.coninsa.co/arrendamientos/vivienda/?text=Medellin`
+- **Municipalities** (`fulltext` key): Medellin, Envigado, Itagui, Sabaneta, La Estrella
 - **Type**: Gatsby SPA with Drupal GraphQL backend
 - **Scraping method**: Direct GraphQL API (Search API), no browser needed
 - **GraphQL endpoint**: `https://admindrupal.coninsa.co/graphql`

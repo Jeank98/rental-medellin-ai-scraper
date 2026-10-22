@@ -150,9 +150,25 @@ class TestPortadaPagination(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["precio"], 1950000)
 
-    def test_only_medellin_is_supported(self):
-        with self.assertRaisesRegex(ValueError, "only supports Medellin"):
+    def test_unknown_city_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "no verified city id"):
             scrape(ciudad="bogota")
+
+    def test_sin_resultados_payload_is_an_empty_result(self):
+        from scrape.portadainmobiliaria import _validate_response
+
+        self.assertEqual(_validate_response("Sin resultados"), ([], {}))
+        self.assertEqual(_validate_response('  sin resultados '), ([], {}))
+        with self.assertRaises(RuntimeError):
+            _validate_response("Service Unavailable")
+
+    def test_metro_city_ids_build_their_own_api_url(self):
+        from scrape.portadainmobiliaria import build_api_url
+
+        self.assertIn("/ciudad/25999/", build_api_url(1, 1, "envigado"))
+        self.assertIn("/ciudad/26001/", build_api_url(1, 1, "Itagüí"))
+        self.assertIn("/ciudad/26020/", build_api_url(1, 1, "sabaneta"))
+        self.assertIn("/ciudad/26021/", build_api_url(1, 1, "La Estrella"))
 
 
 if __name__ == "__main__":

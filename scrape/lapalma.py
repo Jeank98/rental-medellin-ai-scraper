@@ -20,7 +20,15 @@ logger = logging.getLogger(__name__)
 _BASE_URL = "https://lapalmainmobiliaria.com.co"
 _PORTAL = "lapalmainmobiliaria"
 _PREFIX = "LPI"
-_CITY_IDS = {"medellin": "496"}
+_CITY_IDS = {
+    "medellin": "496",
+    "envigado": "291",
+    "itagui": "389",
+    "la estrella": "416",
+    "la-estrella": "416",
+    "sabaneta": "698",
+}
+
 RESIDENTIAL_TYPES = ("apartamento", "casa", "apartaestudio")
 _TYPE_IDS = {"apartamento": "2", "casa": "1", "apartaestudio": "14"}
 _COLUMNS = ["id", "portal", "tipo", "precio", "area", "habitaciones", "banos", "parqueaderos", "estrato", "barrio", "url"]
@@ -230,12 +238,25 @@ def parse_detail_page(html: str) -> DetailFields:
     }
 
 
+def _fold_city(ciudad: str) -> str:
+    """Normalize a municipality name for the verified city-id map."""
+    return (
+        str(ciudad).strip().casefold()
+        .replace("í", "i")
+        .replace("ü", "u")
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("ó", "o")
+    )
+
+
 def build_page_url(page: int, ciudad: str = "medellin", property_type: str | None = None) -> str:
     """Build the official search URL with optional residential type filtering."""
-    city_id = _CITY_IDS.get(ciudad.casefold())
+    city_id = _CITY_IDS.get(_fold_city(ciudad))
     if city_id is None:
         raise UnsupportedCityError(
-            f"La Palma only supports the verified Medellin city filter: {ciudad}"
+            f"La Palma has no verified city id for {ciudad!r}; known: "
+            f"{sorted(set(_CITY_IDS.values()))}"
         )
     query = [
         ("id_city", city_id),

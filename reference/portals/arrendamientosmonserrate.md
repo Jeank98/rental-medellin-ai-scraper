@@ -36,3 +36,34 @@
 - Detail attributes use `<tr><th>label</th><td>value</td>` rows; missing rows remain `0`.
 - Some detail pages lack a SKU; fallback IDs are deterministic hashes of each detail URL.
 - 32 of 55 listings fully extracted (2026-05-18) — some detail pages missing Código
+
+## Rate limiting (`HTTP 429`)
+
+The host (LiteSpeed) throttles by IP and answers `429` **without** a
+`Retry-After` header, then keeps the IP in a cooldown that outlasts the shared
+fetcher's 1-2-4 s retry budget.
+
+Measured on 2026-10-20:
+
+| Pattern | Result |
+|---|---|
+| 5 listing pages, 1 s apart | all `200` |
+| 8 detail pages, 1 s apart | all `200` |
+| 8 detail pages, 4 concurrent | all `200` |
+| 56 detail pages, 4 concurrent | 42 × `429`, block persisted for minutes |
+| 12 detail pages, 5 req/s | 12 × `429` |
+
+Consequences baked into the adapter:
+
+- Listing pages are fetched with a 1 s pause between them.
+- Detail pages are fetched **one at a time, ~1 req/s** (`_DETAIL_BATCH_SIZE = 1`,
+  `_DETAIL_MAX_WORKERS = 1`, `_DETAIL_BATCH_PAUSE_SECONDS = 1.0`).
+- Unresolved details get one retry after 60 s. If more than 20 % of the detail
+  pages still fail, the scraper raises and the portal keeps its previous
+  snapshot instead of writing card-only rows with `MNS-URL-…` ids.
+- `--reuse-unchanged-details` (enabled by `run_all.py`) is the main lever: rows
+  whose price did not change need no detail fetch at all.
+
+Do not raise the detail concurrency or add proxy/IP rotation to get around the
+site's throttle; slow down, run less often, or ask the portal for API access.
+
