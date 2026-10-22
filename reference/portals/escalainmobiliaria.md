@@ -58,10 +58,16 @@ The reported `total` is **advisory**, not a loop bound: the API recomputes it on
 every request and Vercel caches each `pagina` URL independently
 (`x-vercel-cache: HIT`/`STALE`, `age` up to ~316 s observed). Two pages of one
 crawl therefore report different totals for the same inventory. Verified on
-2026-10-22 for Medellín (`ciudad=496`, `limite=100`, fresh requests): `pagina`
+2026-10-22 for Medellín (`ciudad=496`, `limite=100`, ordinary requests): `pagina`
 0 reported `total=569`, page 1 reported 570, pages 2–6 reported 571; pages 1
 and 2 each repeated the previous page's last code (one insertion shifts every
 record down one slot), page 5 returned 71 records and page 6 returned 0.
+
+Every adapter request adds a fresh `_` query value to bypass those independent
+CDN snapshots; `Cache-Control: no-cache` alone is ignored by this endpoint.
+A three-page live nonce probe returned `MISS`, `age: 0`, the same total of 573
+on all pages, and 300 disjoint source codes. This avoids historical cached page
+windows; it does not claim a transactional snapshot while the live site changes.
 
 Termination is the first **empty** `propiedades` array, which is authoritative:
 the endpoint is a zero-based sequential window, so an empty page means the

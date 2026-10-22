@@ -330,7 +330,9 @@ def _fetch_page(city_id: int, pagina: int) -> dict:
     of aborting a whole city crawl on one transient timeout.
     """
     for attempt in range(1, _PAGE_ATTEMPTS + 1):
-        data = fetch_json(build_page_url(city_id, pagina, PAGE_SIZE))
+        # Cached page windows can omit boundary records from a newer inventory.
+        url = f"{build_page_url(city_id, pagina, PAGE_SIZE)}&_={time.time_ns()}"
+        data = fetch_json(url)
         if not _is_declared_failure(data):
             return data
         logger.warning(
