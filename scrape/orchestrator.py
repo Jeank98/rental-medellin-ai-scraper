@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Literal, TypedDict
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
+from psycopg2.extensions import parse_dsn
+
 from scrape.report import compact_console_text, generate_report
 from scrape.process_runner import run_with_retries
 from scrape.run_report import write_json_report
@@ -21,6 +23,42 @@ RETRY_DELAY_SECONDS = 5.0
 SHEET_TIMEOUT_SECONDS = 900
 BACKUP_PREFIX = "rental_scraper_"
 BACKUP_RETENTION = 3
+_PG_CONNECTION_ENV = {
+    "host": "PGHOST",
+    "hostaddr": "PGHOSTADDR",
+    "port": "PGPORT",
+    "dbname": "PGDATABASE",
+    "user": "PGUSER",
+    "password": "PGPASSWORD",
+    "passfile": "PGPASSFILE",
+    "service": "PGSERVICE",
+    "options": "PGOPTIONS",
+    "application_name": "PGAPPNAME",
+    "connect_timeout": "PGCONNECT_TIMEOUT",
+    "client_encoding": "PGCLIENTENCODING",
+    "sslmode": "PGSSLMODE",
+    "sslnegotiation": "PGSSLNEGOTIATION",
+    "sslcompression": "PGSSLCOMPRESSION",
+    "sslcert": "PGSSLCERT",
+    "sslkey": "PGSSLKEY",
+    "sslcertmode": "PGSSLCERTMODE",
+    "sslrootcert": "PGSSLROOTCERT",
+    "sslcrl": "PGSSLCRL",
+    "sslcrldir": "PGSSLCRLDIR",
+    "sslsni": "PGSSLSNI",
+    "ssl_min_protocol_version": "PGSSLMINPROTOCOLVERSION",
+    "ssl_max_protocol_version": "PGSSLMAXPROTOCOLVERSION",
+    "requirepeer": "PGREQUIREPEER",
+    "require_auth": "PGREQUIREAUTH",
+    "gssencmode": "PGGSSENCMODE",
+    "krbsrvname": "PGKRBSRVNAME",
+    "gsslib": "PGGSSLIB",
+    "gssdelegation": "PGGSSDELEGATION",
+    "target_session_attrs": "PGTARGETSESSIONATTRS",
+    "load_balance_hosts": "PGLOADBALANCEHOSTS",
+    "min_protocol_version": "PGMINPROTOCOLVERSION",
+    "max_protocol_version": "PGMAXPROTOCOLVERSION",
+}
 
 PORTALS = {
     "accrecer": {"module": "accrecer"},
@@ -423,6 +461,20 @@ def _clean_db_url(url: str) -> str:
     return urlunparse(clean)
 
 
+def _pg_dump_env(url: str) -> dict[str, str]:
+    """Route libpq with explicit environment fields, never a URI in argv."""
+    parameters = parse_dsn(_clean_db_url(url))
+    if parameters.keys() - _PG_CONNECTION_ENV.keys():
+        # Do not silently discard connection or TLS options without an
+        # environment equivalent; refusing a backup is safer than weakening it.
+        raise ValueError("unsupported backup connection option")
+    environment = os.environ.copy()
+    environment.update(
+        (_PG_CONNECTION_ENV[key], value) for key, value in parameters.items()
+    )
+    return environment
+
+
 def _fmt_time(seconds: float) -> str:
     """Format seconds as human-readable string."""
     if seconds < 60:
@@ -466,7 +518,7 @@ def _pg_dump_error(error: Exception) -> str:
     if isinstance(error, subprocess.TimeoutExpired):
         return f"pg_dump timed out after {error.timeout:g}s"
     if isinstance(error, ValueError):
-        return "DATABASE_URL could not be parsed; backup not attempted"
+        return "DATABASE_URL is invalid or uses unsupported backup connection options"
     if isinstance(error, OSError):
         return f"pg_dump could not run: {error.strerror or type(error).__name__}"
     return f"pg_dump failed ({type(error).__name__})"
@@ -514,9 +566,9 @@ def backup_db(
     a command failure when it could be known.  Missing ``DATABASE_URL`` is an
     intentional skip, while a failed ``pg_dump`` is a required-backup failure.
 
-    The connection URI is passed to ``pg_dump`` through ``PGDATABASE`` in the
-    child environment rather than as an argument, so the command line, error
-    text, and persisted report never contain database credentials.
+    Connection fields are passed through libpq's ``PGHOST``/``PGUSER``/
+    ``PGPASSWORD``/``PGDATABASE`` environment variables, never command
+    arguments. ``PGDATABASE`` alone does not expand a connection URI.
     """
     db_url = os.environ.get("DATABASE_URL")
     if not db_url:
@@ -533,8 +585,7 @@ def backup_db(
 
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         dump_file = backup_path / f"{BACKUP_PREFIX}{timestamp}.sql"
-        clean_url = _clean_db_url(db_url)
-        dump_env = {**os.environ, "PGDATABASE": clean_url}
+        dump_env = _pg_dump_env(db_url)
 
         if verbose:
             print(f"\n{'='*50}")

@@ -165,6 +165,14 @@ The JSON report keeps the legacy
 `backup_path` field and also records `backup.status`, `backup.path`,
 `backup.error`, and `backup.reason`.
 
+The backup helper decodes `DATABASE_URL` into libpq's connection environment
+fields (`PGHOST`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, and applicable TLS options),
+not process arguments or a temporary credential file. `PGDATABASE` contains only
+the database name: a full URI placed there is not expanded and can make
+`pg_dump` try a local socket. Options without a supported environment equivalent
+are rejected rather than silently dropped. See the
+[official libpq environment contract](https://www.postgresql.org/docs/current/libpq-envars.html).
+
 Before a restore, stop writes and verify the target database URL. A typical
 operator restore is:
 

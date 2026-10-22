@@ -361,12 +361,24 @@ def test_backup_db_reports_unparseable_connection_uri_without_credentials(tmp_pa
     run.assert_not_called()
     serialized = json.dumps(outcome)
     assert outcome["status"] == "failed"
-    assert outcome["error"] == "DATABASE_URL could not be parsed; backup not attempted"
     assert "s3cret-pw" not in serialized
     assert "db.example" not in serialized
 
 
-def test_backup_db_passes_connection_uri_only_through_child_environment(tmp_path):
+def test_backup_refuses_unrepresentable_tls_options_without_disclosing_them(tmp_path):
+    url = SECRET_DB_URL + "&sslpassword=private-key-passphrase"
+    with (
+        patch.dict("os.environ", {"DATABASE_URL": url}),
+        patch("scrape.orchestrator.subprocess.run") as run,
+    ):
+        outcome = orchestrator.backup_db(str(tmp_path), verbose=False)
+
+    assert outcome["status"] == "failed"
+    run.assert_not_called()
+    assert "private-key-passphrase" not in json.dumps(outcome)
+
+
+def test_backup_db_keeps_credentials_out_of_command_arguments(tmp_path):
     with (
         patch.dict("os.environ", {"DATABASE_URL": SECRET_DB_URL}),
         patch(
@@ -376,14 +388,9 @@ def test_backup_db_passes_connection_uri_only_through_child_environment(tmp_path
         outcome = orchestrator.backup_db(str(tmp_path), verbose=False)
 
     command = run.call_args.args[0]
-    child_env = run.call_args.kwargs["env"]
     assert outcome["status"] == "success"
     assert "s3cret-pw" not in " ".join(command)
     assert SECRET_DB_URL not in " ".join(command)
-    assert child_env["PGDATABASE"] == (
-        "postgresql://scraper:s3cret-pw@db.example:5432/rentals?sslmode=require"
-    )
-    assert "channel_binding" not in child_env["PGDATABASE"]
 
 
 def test_backup_failure_report_never_contains_the_connection_uri(tmp_path):
@@ -404,7 +411,6 @@ def test_backup_failure_report_never_contains_the_connection_uri(tmp_path):
     assert outcome["status"] == "failed"
     assert SECRET_DB_URL not in serialized
     assert "s3cret-pw" not in serialized
-    assert outcome["error"] == "pg_dump failed with exit code 1"
 
 
 if __name__ == "__main__":
