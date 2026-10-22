@@ -355,7 +355,7 @@ def update_existing_sheet(service, sheet_id, rows, title=None):
             spreadsheetId=sheet_id,
             range=range_str,
             body={"values": values},
-            valueInputOption="USER_ENTERED",
+            valueInputOption="RAW",
         ).execute()
     except HttpError as e:
         error_reason = str(e)
@@ -428,7 +428,7 @@ def create_and_populate_sheet(service, title, rows, folder_id=None):
             spreadsheetId=new_sheet_id,
             range=range_str,
             body={"values": values},
-            valueInputOption="USER_ENTERED",
+            valueInputOption="RAW",
         ).execute()
     except HttpError as e:
         error_reason = str(e)

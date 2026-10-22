@@ -205,6 +205,10 @@ portals.
 
 ## Sheets and OAuth recovery
 
+Exports use `RAW` cell input: locality names such as `12 De Octubre` remain
+literal text instead of dates, and scraped strings are not evaluated as formulas.
+Numeric values remain numeric.
+
 The shared spreadsheet is an unfiltered mirror of the database's **active**
 rows: every city and every portal, not just the city or portals touched by the
 latest run. This is deliberate. A Medellín-only run must not delete Envigado,
