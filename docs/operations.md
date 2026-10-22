@@ -125,6 +125,13 @@ slug is still unknown), `maxibienes`, `panoramainmobiliario`, `lapalma`,
 `totalbienes` (medellin and itagui only — the rest 404). These verified adapters
 reject unsupported municipalities.
 
+The four southern portals added in #36 — `escalainmobiliaria`,
+`arrendamientosenvigado`, `inmobiliarialaestrella` and
+`lonjainmobiliariadelsur` — cover the full canonical scope (`medellin`,
+`envigado`, `itagui`, `la-estrella`, `sabaneta`) through
+`scripts/run_selected.py`, which scrapes each portal once per city and then
+replaces the matching `(portal, ciudad)` snapshot.
+
 This is not a global CLI guarantee: several Medellín-only adapters ignore
 `--ciudad`. Keep `scripts/run_all.py` on its default municipality; use verified
 per-portal commands or the selected multi-city runner for southern cities.
