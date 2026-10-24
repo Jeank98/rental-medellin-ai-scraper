@@ -52,3 +52,44 @@ def test_stops_when_modern_pagination_repeats_the_last_page() -> None:
 
     assert len(rows) == 1
     assert fetch.call_count == 4
+
+
+def test_description_with_dollar_sign_never_becomes_the_price() -> None:
+    """A description containing "$1.850.000" used to be concatenated with the
+    area/card numbers and produced an out-of-range integer."""
+    html = """
+    <div class="result-card">
+      <a href="/inmuebles/detalle/arrendamientos/apartaestudio/AA-93627/centro-medellin">
+        Se arrienda apartaestudio de 45m, a 1 cuadra del parque de Boston.
+        Valor de Arrendamiento $1.850.000 incluida administración
+      </a>
+      <span>Cod: AA-93627</span>
+      <h3>centro, medellín</h3>
+      <span>$</span><span>1.850.000</span><span>COP</span>
+      <span>45</span><span>Metros</span>
+      <span>1</span><span>Baños</span>
+      <span>1</span><span>Alcobas</span>
+    </div>
+    """
+
+    rows = parse_search_page(html, "apartaestudio")
+
+    assert [row["precio"] for row in rows] == [1_850_000]
+    assert rows[0]["area"] == 45
+    assert rows[0]["barrio"] == "Centro"
+
+
+def test_out_of_range_price_skips_the_listing() -> None:
+    html = """
+    <div class="result-card">
+      <a href="/inmuebles/detalle/arrendamientos/apartaestudio/AA-1/centro-medellin">
+        Apartaestudio con excelente ubicación
+      </a>
+      <span>Cod: AA-1</span>
+      <h3>centro, medellín</h3>
+      <span>$</span><span>4.511.850.000</span><span>COP</span>
+      <span>45</span><span>Metros</span>
+    </div>
+    """
+
+    assert parse_search_page(html, "apartaestudio") == []

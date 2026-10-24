@@ -17,6 +17,9 @@ from scrape.validator import validate
 logger = logging.getLogger(__name__)
 
 _BASE = "https://albertoalvarez.com"
+# Rentals above this are portal data errors; PostgreSQL integers top out at
+# 2_147_483_647 and one such row aborts the portal's atomic DB write.
+MAX_REASONABLE_RENT = 200_000_000
 _TIPOS = ["apartamento", "casa", "apartaestudio"]
 _PER_PAGE = 9
 
@@ -51,6 +54,35 @@ def _number_before_label(values: list[str], labels: tuple[str, ...]) -> int:
     return 0
 
 
+def _card_price(values: list[str]) -> int:
+    """Read the card's price node, never the free-text description.
+
+    Cards render ``$`` and the amount as separate strings, and the property
+    description often contains both a ``$`` and numbers (area, "1 cuadra"),
+    which used to be concatenated into an out-of-range integer.
+    """
+    for index, value in enumerate(values[:-1]):
+        if value.strip() != "$":
+            continue
+        candidate = values[index + 1].strip()
+        if not any(character.isdigit() for character in candidate):
+            continue
+        price = normalize_price(candidate)
+        if 0 < price <= MAX_REASONABLE_RENT:
+            return price
+
+    for value in values:
+        stripped = value.strip()
+        if not stripped.startswith("$") or len(stripped) > 20:
+            continue
+        if sum(character.isdigit() for character in stripped) < 4:
+            continue
+        price = normalize_price(stripped)
+        if 0 < price <= MAX_REASONABLE_RENT:
+            return price
+    return 0
+
+
 def _modern_card(article, tipo_url: str) -> dict | None:
     """Extract a listing from the current visible-text card structure."""
     link = article.find("a", href=True)
@@ -64,12 +96,16 @@ def _modern_card(article, tipo_url: str) -> dict | None:
         return None
 
     values = [value.strip() for value in article.stripped_strings if value.strip()]
-    price = next((value for value in values if "$" in value), "")
+    precio = _card_price(values)
+    if not precio:
+        return None
     location = next(
         (
             value
             for value in values
-            if "," in value and value.casefold().endswith(("medellín", "medellin"))
+            if len(value) <= 60
+            and "," in value
+            and value.casefold().endswith(("medellín", "medellin"))
         ),
         "",
     )
@@ -78,7 +114,7 @@ def _modern_card(article, tipo_url: str) -> dict | None:
         "id": f"AAL-{code}",
         "portal": "albertoalvarez",
         "tipo": normalize_tipo(tipo_url),
-        "precio": normalize_price(price),
+        "precio": precio,
         "area": _number_before_label(values, ("metros",)),
         "habitaciones": _number_before_label(values, ("alcobas",)),
         "banos": _number_before_label(values, ("baños", "banos")),
@@ -108,6 +144,8 @@ def _extract_card(article, tipo_url: str) -> dict | None:
     tipo_raw = _TIPO_OVERRIDE.get(raw_tipo.lower(), raw_tipo)
     tipo = normalize_tipo(tipo_raw)
     precio = normalize_price(data.get("rentValue"))
+    if not 0 < precio <= MAX_REASONABLE_RENT:
+        return None
     area = int(data.get("builtArea", 0) or 0)
     habitaciones = int(data.get("numberOfRooms", 0) or 0)
     household = data.get("householdFeatures") or {}
