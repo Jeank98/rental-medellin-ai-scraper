@@ -22,6 +22,7 @@ _BASE = "https://albertoalvarez.com"
 MAX_REASONABLE_RENT = 200_000_000
 _TIPOS = ["apartamento", "casa", "apartaestudio"]
 _PER_PAGE = 9
+_MAX_PAGE_GUARD = 80
 
 _TIPO_OVERRIDE = {
     "casa vivienda": "casa",
@@ -195,6 +196,17 @@ def parse_search_page(html: str, tipo_url: str) -> list[dict]:
     return rows
 
 
+def _search_url(tipo: str, ciudad: str, page: int) -> str:
+    """Build the search URL for one page.
+
+    Page 1 only renders the full card grid without a page parameter; the
+    Next.js route ignores ``pag`` and answers ``page=1`` with an empty shell,
+    so later pages use ``page=N`` while page 1 stays bare.
+    """
+    base = f"{_BASE}/inmuebles/arrendamientos/{tipo}/{ciudad}/?limit={_PER_PAGE}"
+    return base if page <= 1 else f"{base}&page={page}"
+
+
 def scrape(ciudad="medellin", sample_only=False, max_pages=None, verbose=False) -> list[dict]:
     """Scrape AlbertoAlvarez rental listings.
 
@@ -220,8 +232,8 @@ def scrape(ciudad="medellin", sample_only=False, max_pages=None, verbose=False) 
         if verbose:
             logger.info("AAL: fetching tipo=%s", tipo)
 
-        while True:
-            url = f"{_BASE}/inmuebles/arrendamientos/{tipo}/{ciudad}/?limit={_PER_PAGE}&pag={page}"
+        while page <= _MAX_PAGE_GUARD:
+            url = _search_url(tipo, ciudad, page)
 
             if verbose:
                 logger.info("AAL: %s page=%d", tipo, page)
