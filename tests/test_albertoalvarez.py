@@ -93,3 +93,12 @@ def test_out_of_range_price_skips_the_listing() -> None:
     """
 
     assert parse_search_page(html, "apartaestudio") == []
+
+
+def test_search_url_paginates_with_the_page_parameter() -> None:
+    """Page 1 is the bare grid; later pages only paginate with ``page``."""
+    from scrape.albertoalvarez import _search_url
+
+    assert _search_url("apartamento", "medellin", 1).endswith("?limit=9")
+    assert _search_url("apartamento", "medellin", 2).endswith("?limit=9&page=2")
+    assert "pag=" not in _search_url("apartamento", "medellin", 3)
