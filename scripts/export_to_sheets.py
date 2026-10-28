@@ -90,11 +90,66 @@ COLUMN_WIDTHS = {
 }
 
 
+def _oauth_port() -> int:
+    """Local callback port for the OAuth loopback flow.
+
+    A fixed port makes the headless re-authorization possible: forward it over
+    SSH (``ssh -L 8765:localhost:8765``) and open the printed URL on a machine
+    with a browser. ``0`` keeps the random-port behaviour.
+    """
+    raw = os.getenv("GOOGLE_OAUTH_PORT", "").strip()
+    if not raw:
+        return 0
+    try:
+        port = int(raw)
+    except ValueError:
+        sys.exit(f"GOOGLE_OAUTH_PORT must be an integer, got {raw!r}")
+    if not 0 <= port <= 65535:
+        sys.exit(f"GOOGLE_OAUTH_PORT out of range: {port}")
+    return port
+
+
+def _service_account_credentials():
+    """Return service-account credentials when they are configured, else None.
+
+    A service-account key does not expire and needs no browser, so it is the
+    durable alternative to the user OAuth token: share the target spreadsheet
+    with the service-account address and the export stops depending on a
+    refresh token.
+    """
+    import json
+
+    from google.oauth2 import service_account
+
+    inline = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+    path = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "").strip()
+
+    if inline:
+        try:
+            info = json.loads(inline)
+        except json.JSONDecodeError as error:
+            sys.exit(f"GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON: {error}")
+        return service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+
+    if path:
+        if not Path(path).expanduser().exists():
+            sys.exit(f"GOOGLE_SERVICE_ACCOUNT_FILE not found: {path}")
+        return service_account.Credentials.from_service_account_file(
+            str(Path(path).expanduser()), scopes=SCOPES,
+        )
+
+    return None
+
+
 def get_credentials():
-    """Obtain valid OAuth 2.0 credentials, triggering browser flow if needed."""
+    """Obtain valid credentials: service account first, then user OAuth."""
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
+
+    service_account_creds = _service_account_credentials()
+    if service_account_creds is not None:
+        return service_account_creds
 
     client_id = os.getenv("GOOGLE_CLIENT_ID")
     client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
@@ -137,7 +192,15 @@ def get_credentials():
 
     try:
         flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
-        creds = flow.run_local_server(port=0)
+        port = _oauth_port()
+        if port:
+            print(
+                f"Abriendo el flujo OAuth en el puerto {port}: "
+                f"reenvíalo con `ssh -L {port}:localhost:{port} <host>` y abre la URL "
+                "en tu navegador.",
+                flush=True,
+            )
+        creds = flow.run_local_server(port=port)
     except Exception as e:
         print(f"ERROR: OAuth flow failed: {e}")
         print("Check that GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env are correct.")
