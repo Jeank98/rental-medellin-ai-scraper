@@ -239,6 +239,33 @@ printing their values, then remove or re-authorize the token at
 `GOOGLE_SHEET_ID` permissions. A DB or Sheets failure must be visible in the
 report before retrying; do not manually edit the mirror as a recovery shortcut.
 
+### Credential choice
+
+`invalid_grant: Token has been expired or revoked` means the stored user token
+is dead: an OAuth client in *Testing* publishing status expires its refresh
+tokens, Google caps refresh tokens per client, and a password change or manual
+revocation kills them too. Re-authorization is always a manual step by the
+owner; never substitute another account.
+
+Two supported credential paths, resolved in this order:
+
+1. **Service account (durable, preferred).** Set `GOOGLE_SERVICE_ACCOUNT_FILE`
+   to a JSON key path, or `GOOGLE_SERVICE_ACCOUNT_JSON` to its contents. The key
+   does not expire and no browser is involved. Share the target spreadsheet
+   with the service-account address as *Editor*, and keep `GOOGLE_SHEET_ID`
+   pointing at that same spreadsheet.
+2. **User OAuth token.** Used only when no service account is configured.
+
+For the OAuth path on a headless host, set `GOOGLE_OAUTH_PORT` (for example
+`8765`) so the loopback callback is predictable: open the tunnel with
+`ssh -L 8765:localhost:8765 <host>`, run the export on the host, and open the
+printed URL in the local browser. With no `GOOGLE_OAUTH_PORT` the flow keeps a
+random port and needs a browser on the host itself.
+
+To stop refresh tokens from expiring on the OAuth path, publish the OAuth
+consent screen to *In production* in the Google Cloud console; a *Testing*
+client expires them. The service account avoids the issue entirely.
+
 ## Zero-result policy
 
 - **Sample/health mode:** zero listings or a missing/malformed structured
