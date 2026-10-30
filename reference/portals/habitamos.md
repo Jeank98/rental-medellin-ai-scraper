@@ -1,36 +1,36 @@
 # Habitamos (`HBM`)
 
-- **URL**: `https://en.habitamos.com.co/resultados/1/asc/fecha_consignacion/arriendo/tipo_propiedad_defecto/Medell%C3%ADn/barrio_defecto/banios_defecto/alcobas_defecto/precio_desde_defecto/precio_hasta_defecto/codigo_defecto/area_desde_defecto/area_hasta_defecto`
-- **Type**: Server-rendered Drupal 9 (PHP, no JS)
-- **Listing card**: `.cell.medium-6.large-3.margin-bottom-1`
-- **Listings per page**: ~50
-- **Total pages**: 3 — discovered dynamically (page 4 returns "There are no properties")
-- **Pagination**: Page number in URL path: `/resultados/{N}/asc/...`
+- **URL**: `https://habitamos.com.co/api/propiedades/buscar?comercio=arriendo&pagina={N}&por_pagina=12&municipio={MUNICIPIO}`
+- **Type**: REST JSON (one phase, no detail pages)
+- **Listings per page**: 12 — the API caps `por_pagina` at 12 and ignores larger values
+- **Total pages**: `total_paginas` on every response (`total` carries the grand total)
+- **Pagination**: `pagina` query parameter, 1-based
+- **Traps**:
+  - The body is wrapped as `<html><body>{…json…}</body></html>`; unwrap before `json.loads`.
+  - `municipio` filters on the accented label the API prints (`Medellín`, `Itagüí`, `La Estrella`).
+  - The public listing page is now a client-side shell: `/propiedades?comercio=arriendo` answers 200 with no cards, and the legacy `en.habitamos.com.co` host answers 403. The API above is the only reachable source.
 
-| Column | Source | Pattern |
-|--------|--------|---------|
-| `id` | `HBM-{code}` | `Code: 5382` |
+| Column | Source | Notes |
+|--------|--------|-------|
+| `id` | `HBM-{codigo}` | `codigo` in the record |
 | `portal` | `habitamos` | Fixed |
-| `tipo` | Heading `TIPO - Medellin - BARRIO` | Normalize EN/ES: Apartment→apartamento, House→casa, etc. |
-| `precio` | `$` line or "Rental price: $" | Dual For Lease/Sale: take rental price only |
-| `area` | **Not in card** | → `0` |
-| `habitaciones` | `Features: Bedrooms: N` (EN/ES mixed) | Also check `Habitaciones: N` |
-| `banos` | `Bathrooms: N` or `Baños: N` | 0 if absent |
-| `parqueaderos` | `Garage: N` | 0 if absent |
-| `estrato` | **Not in card** | → `0` |
-| `barrio` | Heading after `Medellin - ` | Mixed EN/ES: "Medellín" or "Medellin" |
-| `url` | `/propiedad/{CODE}` | Prepend `https://en.habitamos.com.co` |
+| `tipo` | `tipo` | `Apartamento` / `Casa` / `Apartaestudio`; Local, Bodega, Oficina and Lote are skipped |
+| `precio` | `precio_arriendo` | `precio_venta` ignored; 0 or out-of-range drops the record |
+| `area` | `area_numero` (fallback `area`) | Always published |
+| `habitaciones` | `alcobas` | 0 if absent |
+| `banos` | `banos` | 0 if absent |
+| `parqueaderos` | `parqueaderos` | 0 if absent |
+| `estrato` | — | Genuinely absent → `0` |
+| `barrio` | `barrio` | As published |
+| `url` | `https://www.habitamos.com.co/propiedades/{codigo}` | SSR detail page resolves |
 
-**Notes**:
-- Mixed English/Spanish labels — handle both for Features extraction
-- Title comes AFTER features/price in text (unusual order)
-- Compound tipos: Casa-local→casa, Local-house→local, Office-Consultorio→oficina
-- "For Lease/Sale" = dual price: extract "Rental price:" value
-- 148 listings extracted (2026-05-18)
+**Municipalities verified** (2026-10-30): Medellín 162 rentals · Envigado 55 · Sabaneta 11 · Itagüí 3 · La Estrella 1. Any other city raises `UnsupportedCityError`.
 
 ## Zero Genuineness
 
 | Field | Default 0 | Status |
 |-------|-----------|--------|
-| `area` | 0 | ✅ Genuine — Not in card |
-| `estrato` | 0 | ✅ Genuine — Not in card |
+| `estrato` | 0 | ✅ Genuine — absent from the API |
+| `area` | — | Now published (`area_numero`), no longer genuine 0 |
+
+**Field caveat**: records without a rent price are dropped instead of stored as `precio = 0`; the older card parser stored the 0 and polluted the sheet.

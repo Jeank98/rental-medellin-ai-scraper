@@ -1,209 +1,191 @@
-"""Habitamos (HBM) — server-rendered Drupal 9 HTML scraper.
+"""Habitamos (HBM) — one-phase REST extraction.
 
-Parses listing cards from .cell.medium-6.large-3.margin-bottom-1 using
-BeautifulSoup. Handles mixed EN/ES labels and dual-price fields.
+The portal was rebuilt on Drupal: ``/propiedades?comercio=arriendo`` now ships an
+empty shell and the results are loaded client-side from
+``/api/propiedades/buscar``. The legacy ``en.habitamos.com.co`` host answers 403
+and its card markup (``.cell.medium-6...``) no longer exists anywhere.
+
+Each search response already carries every contractual field, so no detail
+request is needed. ``estrato`` is genuinely absent from this API.
 """
 
+import json
 import logging
+import re
+from typing import Final
 from urllib.parse import quote
 
-from bs4 import BeautifulSoup
-
 from scrape.fetcher import fetch_page
-from scrape.normalize import normalize_price, normalize_tipo, normalize_barrio
+from scrape.normalize import normalize_barrio, normalize_price, normalize_tipo
 from scrape.validator import validate
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://en.habitamos.com.co"
-CARD_SELECTOR = ".cell.medium-6.large-3.margin-bottom-1"
+PORTAL: Final = "habitamos"
+API_BASE: Final = "https://habitamos.com.co/api/propiedades/buscar"
+DETAIL_BASE: Final = "https://www.habitamos.com.co/propiedades/"
+PAGE_SIZE: Final = 12  # the API caps por_pagina at 12
+MIN_RENT: Final = 200_000
+MAX_RENT: Final = 200_000_000
 
-_CITY_NORMALIZE = {
-    "medellin": "Medell\xedn",
-    "medell\xedn": "Medell\xedn",
-    "bogota": "Bogot\xe1",
-    "bogot\xe1": "Bogot\xe1",
+# The API filters on the municipality label it prints, accents included.
+CITY_NAMES: Final[dict[str, str]] = {
+    "medellin": "Medellín",
+    "medellín": "Medellín",
+    "envigado": "Envigado",
+    "itagui": "Itagüí",
+    "itagüí": "Itagüí",
+    "sabaneta": "Sabaneta",
+    "la estrella": "La Estrella",
+    "la estrella ": "La Estrella",
 }
 
-_FEATURE_LABELS = {
-    "bedrooms": ["Bedrooms:", "Habitaciones:", "habitaciones:", "Alcobas:", "alcobas:"],
-    "bathrooms": ["Bathrooms:", "Baños:", "baños:", "Banos:", "banos:"],
-    "garage": ["Garage:", "Garaje:", "garaje:", "Parqueadero:", "Parqueaderos:"],
-}
+RESIDENTIAL_TYPES: Final = {"apartamento", "apartaestudio", "casa"}
+
+_WRAPPER_RE = re.compile(r"^\s*<html><body>|</body></html>\s*$", re.IGNORECASE)
 
 
-def _get_heading_text(card) -> str:
-    h6 = card.find("h6")
-    if h6:
-        return h6.get_text(strip=True)
-    return ""
+class UnsupportedCityError(KeyError):
+    """Raised when the requested city has no verified Habitamos filter."""
 
 
-def _card_url(card) -> str:
-    link = card.find("a", href=True)
-    if link:
-        href = link["href"]
-        return BASE_URL + href if href.startswith("/") else href
-    return ""
+def _city_key(ciudad: str) -> str:
+    return " ".join(str(ciudad).strip().casefold().replace("-", " ").split())
 
 
-def _extract_code(card) -> str:
-    text = card.get_text(separator=" ", strip=True)
-    for prefix in ("Code:", "Código:", "Codigo:"):
-        if prefix.lower() in text.lower():
-            idx = text.lower().index(prefix.lower()) + len(prefix)
-            parts = text[idx:].strip().split()
-            if parts and parts[0].isdigit():
-                return parts[0]
-    return ""
-
-
-def _extract_tipo(card) -> str:
-    text = _get_heading_text(card)
-    if not text:
-        return ""
-    if " - " in text:
-        return normalize_tipo(text.split(" - ")[0].strip())
-    return ""
-
-
-def _extract_barrio(card) -> str:
-    text = _get_heading_text(card)
-    if not text:
-        return ""
-    for marker in (" - Medell\xedn - ", " - Medellin - "):
-        if marker in text:
-            return normalize_barrio(text.split(marker)[-1].strip())
-    return ""
-
-
-def _extract_precio(card) -> int:
-    text = card.get_text(separator=" ", strip=True)
-    for pattern in ("Rental price:", "rental price:", "Rental Price:"):
-        if pattern in text:
-            idx = text.index(pattern) + len(pattern)
-            chunk = text[idx:].strip()
-            for stop in ("Sale price:", "For Sale:", "For sale:"):
-                if stop.lower() in chunk.lower():
-                    chunk = chunk[: chunk.lower().index(stop.lower())].strip()
-            return normalize_price(chunk)
-    idx = text.find("$")
-    if idx >= 0:
-        chunk = text[idx:]
-        for stop in ("Sale price:", "For Sale:", "For sale:"):
-            if stop.lower() in chunk.lower():
-                chunk = chunk[: chunk.lower().index(stop.lower())].strip()
-        return normalize_price(chunk)
-    return 0
-
-
-def _extract_feature(text: str, labels: list[str]) -> int:
-    for label in labels:
-        if label.lower() in text.lower():
-            idx = text.lower().index(label.lower()) + len(label)
-            chunk = text[idx:].strip()
-            word = chunk.split()[0] if chunk.split() else ""
-            word = word.strip(",.")
-            digits = "".join(c for c in word if c.isdigit())
-            if digits:
-                return int(digits)
-            break
-    return 0
-
-
-def _extract_features(card):
-    text = card.get_text(separator=" ", strip=True)
-    return (
-        _extract_feature(text, _FEATURE_LABELS["bedrooms"]),
-        _extract_feature(text, _FEATURE_LABELS["bathrooms"]),
-        _extract_feature(text, _FEATURE_LABELS["garage"]),
+def resolve_municipio(ciudad: str) -> str:
+    """Map a canonical city label to the municipality the API filters on."""
+    key = _city_key(ciudad)
+    if key in CITY_NAMES:
+        return CITY_NAMES[key]
+    known = ["medellin", "envigado", "itagui", "sabaneta", "la estrella"]
+    raise UnsupportedCityError(
+        f"Habitamos has no verified filter for {ciudad!r}; known: {known}"
     )
 
 
-def _extract_listing(card) -> dict:
-    code = _extract_code(card)
-    habitaciones, banos, parqueaderos = _extract_features(card)
+def build_api_url(page: int, municipio: str) -> str:
+    """One search URL. Page numbering is 1-based."""
+    return (
+        f"{API_BASE}?comercio=arriendo&pagina={page}"
+        f"&por_pagina={PAGE_SIZE}&municipio={quote(municipio)}"
+    )
+
+
+def parse_search_payload(raw: str) -> dict:
+    """Parse one search response; the endpoint wraps its JSON in ``<html><body>``."""
+    body = _WRAPPER_RE.sub("", str(raw).strip())
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"Habitamos returned a non-JSON payload: {error}") from error
+
+
+def _int(value) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        return normalize_price(value)
+    return 0
+
+
+def to_listing(item: dict) -> dict | None:
+    """Map one API record to the 11-column schema.
+
+    Non-residential inventory (local, bodega, oficina, lote) is dropped: the
+    shared sheet and the validator only track dwellings.
+    """
+    code = str(item.get("codigo") or "").strip()
+    if not code:
+        return None
+
+    tipo = normalize_tipo(item.get("tipo") or "")
+    if tipo not in RESIDENTIAL_TYPES:
+        return None
+
+    precio = _int(item.get("precio_arriendo"))
+    if not MIN_RENT <= precio <= MAX_RENT:
+        return None
+
     return {
-        "id": f"HBM-{code}" if code else "",
-        "portal": "habitamos",
-        "tipo": _extract_tipo(card),
-        "precio": _extract_precio(card),
-        "area": 0,
-        "habitaciones": habitaciones,
-        "banos": banos,
-        "parqueaderos": parqueaderos,
+        "id": f"HBM-{code}",
+        "portal": PORTAL,
+        "tipo": tipo,
+        "precio": precio,
+        "area": _int(item.get("area_numero")) or _int(item.get("area")),
+        "habitaciones": _int(item.get("alcobas")),
+        "banos": _int(item.get("banos")),
+        "parqueaderos": _int(item.get("parqueaderos")),
         "estrato": 0,
-        "barrio": _extract_barrio(card),
-        "url": _card_url(card),
+        "barrio": normalize_barrio(item.get("barrio") or ""),
+        "url": f"{DETAIL_BASE}{code}",
     }
 
 
 def scrape(
     ciudad="Medellín", sample_only=False, max_pages=None, verbose=False
 ) -> list[dict]:
-    """Scrape Habitamos rental listings by paginating HTML pages.
-
-    Stop condition: page contains "There are no properties" or no cards found.
+    """Scrape Habitamos rental listings for one municipality.
 
     Args:
-        ciudad: City filter (default: medellin).
-        sample_only: Limit to 3 pages if True.
+        ciudad: Canonical city (medellin, envigado, itagui, sabaneta,
+            la-estrella) or an accented/aliased label.
+        sample_only: Limit to 3 pages.
         max_pages: Explicit page limit.
-        verbose: Detailed extraction logging.
+        verbose: Per-page logging.
 
     Returns:
         List of standardized 11-column listing dicts.
     """
-    page = 1
-    pages_fetched = 0
+    municipio = resolve_municipio(ciudad)
+    page_limit = max_pages if max_pages is not None else (3 if sample_only else None)
+
     listings: list[dict] = []
-
-    ciudad_normalized = _CITY_NORMALIZE.get(ciudad.lower().strip(), ciudad)
-    encoded_ciudad = quote(ciudad_normalized)
-
-    url_template = (
-        "https://en.habitamos.com.co/resultados/{}/asc"
-        "/fecha_consignacion/arriendo/tipo_propiedad_defecto"
-        f"/{encoded_ciudad}"
-        "/barrio_defecto/banios_defecto/alcobas_defecto"
-        "/precio_desde_defecto/precio_hasta_defecto"
-        "/codigo_defecto/area_desde_defecto/area_hasta_defecto"
-    )
+    seen: set[str] = set()
+    page = 1
+    total_pages = 0
 
     while True:
-        if max_pages is not None and pages_fetched >= max_pages:
-            break
-        if sample_only and pages_fetched >= 3:
+        if page_limit is not None and page > page_limit:
             break
 
-        url = url_template.format(page)
-
+        url = build_api_url(page, municipio)
         if verbose:
-            logger.info("HBM: page %d — %s", page, url)
+            logger.info("HBM: %s pagina=%d", municipio, page)
 
-        html = fetch_page(url)
-        if html is None:
-            logger.warning("HBM: failed to fetch page %d", page)
+        try:
+            payload = parse_search_payload(str(fetch_page(url)))
+        except Exception as error:  # noqa: BLE001 - reported by the caller
+            logger.error("HBM: fallo la página %d: %s", page, error)
             break
 
-        if "There are no properties" in html:
+        results = payload.get("resultados") or []
+        if page == 1:
+            total_pages = _int(payload.get("total_paginas"))
             if verbose:
-                logger.info("HBM: no more properties at page %d", page)
+                logger.info(
+                    "HBM: %s total=%s paginas=%s",
+                    municipio, payload.get("total"), total_pages,
+                )
+
+        if not results:
             break
 
-        soup = BeautifulSoup(html, "html.parser")
-        cards = soup.select(CARD_SELECTOR)
-        if not cards:
-            if verbose:
-                logger.info("HBM: no cards found on page %d", page)
-            break
-
-        for card in cards:
-            listing = _extract_listing(card)
+        for item in results:
+            listing = to_listing(item)
+            if listing is None or listing["id"] in seen:
+                continue
             validate(listing)
+            seen.add(listing["id"])
             listings.append(listing)
 
+        if total_pages and page >= total_pages:
+            break
         page += 1
-        pages_fetched += 1
 
+    logger.info("HBM %s: %d listings", municipio, len(listings))
     return listings

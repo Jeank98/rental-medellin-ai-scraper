@@ -121,7 +121,8 @@ uv run python scripts/scrape_zitios.py --output db --ciudad sabaneta
 Verified today: `arangotobon` (medellin, envigado, itagui, sabaneta,
 la-estrella), `zitios` (medellin, envigado, itagui, sabaneta; La Estrella's
 slug is still unknown), `maxibienes`, `panoramainmobiliario`, `lapalma`,
-`portadainmobiliaria` and `coninsa` (all four south municipalities), plus
+`portadainmobiliaria` and `coninsa` (all four south municipalities),
+`habitamos` (all five, through its JSON search API) plus
 `totalbienes` (medellin and itagui only — the rest 404). These verified adapters
 reject unsupported municipalities.
 
