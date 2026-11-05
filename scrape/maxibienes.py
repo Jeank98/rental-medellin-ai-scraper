@@ -67,11 +67,12 @@ def _page_url(page: int, ciudad: str = "medellin") -> str:
 
 
 def _get_total_pages(html: str) -> int:
-    m = re.search(r'var\s+totalpagina\s*=\s*(\d+)', html)
-    if m:
-        return int(m.group(1))
-    logger.warning("var totalpagina not found in HTML, defaulting to 1 page")
-    return 1
+    size = re.search(r'\bvar\s+totalpagina\s*=\s*(\d+)\s*;', html)
+    total = re.search(r'\bvar\s+totalInmuebles\s*=\s*(\d+)\s*;', html)
+    if not size or not total or int(size.group(1)) == 0:
+        raise ValueError("Maxibienes pagination metadata is missing or invalid")
+    page_size = int(size.group(1))
+    return (int(total.group(1)) + page_size - 1) // page_size
 
 
 def _extract_listing(card) -> dict:
@@ -157,6 +158,8 @@ def scrape(ciudad='medellin', sample_only=False, max_pages=None, verbose=False) 
         return []
 
     total_pages = _get_total_pages(html)
+    if total_pages == 0:
+        return []
     if max_pages is not None:
         total_pages = min(total_pages, max_pages)
 

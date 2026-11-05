@@ -4,10 +4,9 @@
 - **Municipalities** (`ciudad` id): medellin 5001, envigado 5266, itagui 5360, sabaneta 5631, la estrella 5380
 - **Type**: Server-rendered PHP
 - **Listing card**: `.grid-style1 .item`
-- **Listings per page**: 12
-- **Total pages**: Discovered dynamically from `var totalInmuebles` and `var totalpagina` in page HTML
+- **Listings per page**: `var totalpagina` in page HTML (currently 12)
+- **Total pages**: `ceil(totalInmuebles / totalpagina)`; `totalInmuebles` is the listing count
 - **Pagination**: `/pagina/N?query` (no trailing slash before `?`)
-- **Pagination values**: discovered dynamically from `var totalInmuebles` and `var totalpagina` in page HTML
 
 | Column | Source | Pattern |
 |--------|--------|---------|
