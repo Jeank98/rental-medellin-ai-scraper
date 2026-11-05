@@ -3,6 +3,8 @@
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 from scrape.zitios import (
     DetailFields,
     Listing,
@@ -34,7 +36,7 @@ def _load(name: str) -> str:
     return (FIXTURES / name).read_text(encoding="utf-8")
 
 
-def test_page_url_uses_verified_four_page_route() -> None:
+def test_page_url_uses_city_and_property_routes() -> None:
     assert _page_url(1) == "https://zitios.com.co/inmuebles/g/arriendo/c/medell%C3%ADn/"
     assert _page_url(1, "apartamentos") == (
         "https://zitios.com.co/inmuebles/g/arriendo/t/apartamentos/c/medell%C3%ADn/"
@@ -80,7 +82,7 @@ def test_search_parser_rejects_non_residential_and_mixed_management_cards() -> N
     assert [row["id"] for row in rows] == ["ZIT-10188009"]
 
 
-def test_detail_parser_recovers_contract_fields_and_proves_missing_garage() -> None:
+def test_detail_parser_recovers_contract_fields_and_leaves_missing_garage_unknown() -> None:
     detail = parse_detail_page(_load("detail_10188009.html"))
 
     assert detail["tipo"] == "apartamento"
@@ -94,6 +96,20 @@ def test_detail_parser_recovers_contract_fields_and_proves_missing_garage() -> N
 
     sparse = parse_detail_page(_load("detail_10125019.html"))
     assert sparse["parqueaderos"] is None
+
+
+@pytest.mark.parametrize(("label", "expected"), [
+    ("Garajes: 2", 2),
+    ("Parqueaderos: 3", 3),
+])
+def test_detail_parking_reads_plural_garages_label(label, expected) -> None:
+    detail = parse_detail_page(f"<html><body><li>{label}</li></body></html>")
+    assert detail["parqueaderos"] == expected
+
+    row = parse_search_page(_load("search_page_1.html"))[0]
+    row["parqueaderos"] = 2
+    _merge_detail(row, detail)
+    assert row["parqueaderos"] == expected
 
 
 def test_detail_barrio_never_replaces_card_barrio_with_related_listing_metadata() -> None:
@@ -161,12 +177,124 @@ def test_detail_barrio_never_replaces_card_barrio_with_related_listing_metadata(
     assert missing_card_barrio["barrio"] == "Laureles"
 
 
+
+def test_merge_detail_preserves_card_parking_when_detail_omits_it() -> None:
+    row = parse_search_page(_load("search_page_1.html"))[0]
+    detail = parse_detail_page(_load("detail_10125019.html"))
+    assert row["parqueaderos"] == 1
+    assert detail["parqueaderos"] is None
+
+    _merge_detail(row, detail)
+    assert row["parqueaderos"] == 1
+
+    detail["parqueaderos"] = 0
+    _merge_detail(row, detail)
+    assert row["parqueaderos"] == 0
+
+
+def test_scrape_unions_canonical_fifth_page_after_commercial_only_pages() -> None:
+    def card(code: int, slug: str, heading: str) -> str:
+        return (
+            '<article itemprop="itemListElement">'
+            f'<a href="/inmueble/{slug}_{code}"><h2>{heading} enArriendo</h2></a>'
+            "</article>"
+        )
+
+    duplicate = card(1, "arriendo-apartamento", "Apartamento")
+    def commercial(page: int) -> str:
+        return card(100 + page, "arriendo-local", "Local")
+
+    subtype = card(2, "arriendo-apartamento", "Penthouse")
+    requested = []
+
+    def fetch(url: str) -> str:
+        requested.append(url)
+        if url == _page_url(1, "apartamentos"):
+            return duplicate
+        for page in range(1, 6):
+            if url == _page_url(page):
+                return (duplicate if page == 1 else "") + commercial(page) + (
+                    subtype if page == 5 else ""
+                )
+        return ""
+
+    with (
+        mock.patch("scrape.zitios.fetch_page", side_effect=fetch),
+        mock.patch("scrape.zitios.bulk_fetch", return_value=[]) as details,
+    ):
+        rows = scrape()
+
+    assert [row["id"] for row in rows] == ["ZIT-1", "ZIT-2"]
+    assert _page_url(5) in requested
+    assert _page_url(6) in requested
+    assert details.call_args.args[0] == [row["url"] for row in rows]
+
+
+@pytest.mark.parametrize("bad_html", [
+    None, "", "<title>Just a moment...</title>", "<script src='/challenge-platform/x'></script>",
+])
+def test_scrape_rejects_unavailable_or_challenged_canonical_first_page(bad_html) -> None:
+    with mock.patch(
+        "scrape.zitios.fetch_page",
+        side_effect=lambda url: bad_html if url == _page_url(1) else "",
+    ):
+        with pytest.raises(RuntimeError):
+            scrape(sample_only=True)
+
+
+@pytest.mark.parametrize(("sample_only", "max_pages", "expected_pages"), [
+    (True, None, 1),
+    (False, 2, 2),
+    (False, 5, 5),
+])
+def test_scrape_honors_sample_and_explicit_page_bounds(
+    sample_only, max_pages, expected_pages
+) -> None:
+    requested = []
+
+    def fetch(url: str) -> str:
+        requested.append(url)
+        for page in range(1, 7):
+            if url == _page_url(page):
+                return (
+                    '<article itemprop="itemListElement">'
+                    f'<a href="/inmueble/arriendo-local_{page}">'
+                    "<h2>Local enArriendo</h2></a></article>"
+                )
+        return ""
+
+    with mock.patch("scrape.zitios.fetch_page", side_effect=fetch):
+        scrape(sample_only=sample_only, max_pages=max_pages)
+
+    assert _page_url(expected_pages) in requested
+    assert _page_url(expected_pages + 1) not in requested
+
+
+def test_scrape_stops_when_a_source_page_repeats() -> None:
+    requested = []
+    card = (
+        '<article itemprop="itemListElement">'
+        '<a href="/inmueble/arriendo-local_1"><h2>Local enArriendo</h2></a>'
+        "</article>"
+    )
+
+    def fetch(url: str) -> str:
+        requested.append(url)
+        return card if url in (_page_url(1), _page_url(2)) else ""
+
+    with mock.patch("scrape.zitios.fetch_page", side_effect=fetch):
+        assert scrape() == []
+
+    assert _page_url(2) in requested
+    assert _page_url(3) not in requested
+
+
 def test_scrape_deduplicates_ids_merges_details_and_keeps_exact_contract() -> None:
     pages = {
         _page_url(page, property_type): _load(
             f"search_page_{page}.html"
         )
-        for property_type in ("apartamentos", "casas", "apartaestudios")
+        for property_type in ("apartamentos", "casas", "apartaestudios", None)
         for page in (1, 2)
     }
     requested_urls: list[str] = []
@@ -196,7 +324,7 @@ def test_scrape_deduplicates_ids_merges_details_and_keeps_exact_contract() -> No
 
     assert requested_urls == [
         _page_url(page, property_type)
-        for property_type in ("apartamentos", "casas", "apartaestudios")
+        for property_type in ("apartamentos", "casas", "apartaestudios", None)
         for page in (1, 2)
     ]
     assert [row["id"] for row in rows] == ["ZIT-10188009", "ZIT-10125019"]
@@ -235,7 +363,7 @@ def test_scrape_reuses_unchanged_detail_candidates_without_replacing_card_barrio
 
     search_urls = {
         _page_url(1, property_type)
-        for property_type in ("apartamentos", "casas", "apartaestudios")
+        for property_type in ("apartamentos", "casas", "apartaestudios", None)
     }
     with (
         mock.patch(
@@ -264,7 +392,7 @@ def test_scrape_never_sends_non_residential_cards_to_detail_fetch() -> None:
     )
 
     def fetch(url: str) -> str:
-        return _load("search_page_non_residential.html") if url == search_url else ""
+        return _load("search_page_non_residential.html") if url in (search_url, _page_url(1)) else ""
 
     with mock.patch("scrape.zitios.fetch_page", side_effect=fetch), mock.patch(
         "scrape.zitios.bulk_fetch",
@@ -286,7 +414,7 @@ def test_scrape_never_sends_commercial_house_to_detail_fetch() -> None:
     )
 
     def fetch(url: str) -> str:
-        return _load("search_page_commercial_house.html") if url == search_url else ""
+        return _load("search_page_commercial_house.html") if url in (search_url, _page_url(1)) else ""
 
     with mock.patch("scrape.zitios.fetch_page", side_effect=fetch), mock.patch(
         "scrape.zitios.bulk_fetch", return_value=[]

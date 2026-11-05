@@ -29,12 +29,10 @@ _CITY_SLUGS = {
     "itagui": "itagui",
     "sabaneta": "sabaneta",
 }
-_SEARCH_URL = f"{_BASE}/inmuebles/g/arriendo/c/medell%C3%ADn/"
 _RESIDENTIAL_ROUTES = ("apartamentos", "casas", "apartaestudios")
 _RESIDENTIAL_TYPES = frozenset(("apartamento", "casa", "apartaestudio"))
 _PORTAL = "zitios"
 _PREFIX = "ZIT"
-_TOTAL_PAGES = 4
 Listing = TypedDict("Listing", {"id": str, "portal": str, "tipo": str, "precio": int, "area": int, "habitaciones": int, "banos": int, "parqueaderos": int, "estrato": int, "barrio": str, "url": str})
 DetailFields = TypedDict("DetailFields", {"tipo": str, "precio": int, "area": int, "habitaciones": int, "banos": int, "parqueaderos": int | None, "estrato": int, "barrio": str})
 
@@ -276,7 +274,7 @@ def parse_detail_page(html: str) -> DetailFields:
     values = _leaf_texts(soup)
     body = soup.get_text(" ", strip=True)
     garage_value = _first_labeled(
-        values, ("garaje", "garajes", "parqueadero", "parqueaderos")
+        values, ("garajes", "garaje", "parqueaderos", "parqueadero")
     )
     garage: int | None = normalize_garaje(garage_value) if garage_value else None
     if garage is None and _explicit_no_parking(body):
@@ -314,8 +312,8 @@ def _merge_detail(row: Listing, detail: DetailFields) -> None:
     for field in ("precio", "area", "habitaciones", "banos", "estrato"):
         if detail[field] > 0:
             row[field] = detail[field]
-    # A successful detail response proves an omitted garage label is source-absent.
-    row["parqueaderos"] = detail["parqueaderos"] or 0
+    if detail["parqueaderos"] is not None:
+        row["parqueaderos"] = detail["parqueaderos"]
     if detail["barrio"] and not row["barrio"]:
         row["barrio"] = detail["barrio"]
 
@@ -358,24 +356,47 @@ def scrape(
 ) -> list[Listing]:
     """Scrape Zitios rentals for one verified municipality in two phases."""
     _city_slug(ciudad)
-    page_limit = (
-        _TOTAL_PAGES
-        if max_pages is None
-        else max(1, min(max_pages, _TOTAL_PAGES))
+    page_limit = max(1, max_pages) if max_pages is not None else (
+        1 if sample_only else None
     )
-    if sample_only and max_pages is None:
-        page_limit = 1
 
     by_id: dict[str, Listing] = {}
-    for property_type in _RESIDENTIAL_ROUTES:
-        for page in range(1, page_limit + 1):
-            html = fetch_page(_page_url(page, property_type, ciudad)) or ""
-            page_rows = parse_search_page(html)
-            if not page_rows:
+    for property_type in (*_RESIDENTIAL_ROUTES, None):
+        source_ids_seen: set[str] = set()
+        page = 1
+        while page_limit is None or page <= page_limit:
+            html = fetch_page(_page_url(page, property_type, ciudad))
+            if not html:
+                if property_type is None and page == 1:
+                    raise RuntimeError("Zitios canonical search page is unavailable")
                 break
+            soup = BeautifulSoup(html, "lxml")
+            title = soup.title.get_text(" ", strip=True).casefold() if soup.title else ""
+            if (
+                "just a moment" in title
+                or "attention required" in title
+                or "challenge-platform" in html.casefold()
+            ):
+                raise RuntimeError("Zitios search returned a browser challenge")
+            cards = soup.find_all("article")
+            source_ids = {
+                code for card in cards
+                if (code := _code_from_url(_property_link(card)))
+            }
+            if cards and not source_ids:
+                raise RuntimeError("Zitios search cards have no recognizable IDs")
+            if not source_ids:
+                if property_type is None and page == 1 and (
+                    "no existen resultados para esta búsqueda" not in soup.get_text(" ", strip=True).casefold()
+                ):
+                    raise RuntimeError("Zitios canonical search page has no recognizable inventory")
+                break
+            if not source_ids - source_ids_seen:
+                break
+            source_ids_seen.update(source_ids)
+            page_rows = [row for card in cards if (row := _parse_card(card)) is not None]
             for row in page_rows:
-                if row["id"] not in by_id:
-                    by_id[row["id"]] = row
+                by_id.setdefault(row["id"], row)
             if verbose:
                 logger.info(
                     "Zitios %s page %d: %d cards, %d unique",
@@ -384,6 +405,7 @@ def scrape(
                     len(page_rows),
                     len(by_id),
                 )
+            page += 1
 
     rows = list(by_id.values())
     if not rows:

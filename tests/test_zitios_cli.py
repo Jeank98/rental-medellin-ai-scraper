@@ -26,7 +26,7 @@ def test_sample_only_uses_fixture_scraper_without_writers() -> None:
     )
     search_urls = [
         _page_url(1, property_type)
-        for property_type in ("apartamentos", "casas", "apartaestudios")
+        for property_type in ("apartamentos", "casas", "apartaestudios", None)
     ]
     detail_urls = [
         "https://zitios.com.co/inmueble/arriendo-apartamento-robledo-pajarito_10188009",
