@@ -1,57 +1,40 @@
 # Arrendamientos SantaFe (`ASF`)
 
-- **URL**: `https://arrendamientossantafe.com/propiedades/?bussines_type=Arrendar`
-- **Type**: Server-rendered (Django or similar)
-- **Listing card**: `.property-card`
-- **Detail page**: `/propiedad/{CODE}/` — server-rendered, no JS required
-- **Listings per page**: 12
-- **Total pages**: Discovered via `?page=9999` trick — server redirects to last real page (94). Pagination element `.current` shows the number.
-- **Pagination**: `?page=N&bussines_type=Arrendar`
-- **Pagination discovery**: Request page=9999, extract last page number from `.current` element. Then parallel `bulk_fetch` all pages with 20 workers.
-- **Key feature**: **Card fields incomplete — requires two-phase scrape** (verified 2026-05-19)
+- **Search API**: `https://arrendamientossantafe.com/apisf/properties?page={N}&oferta=Arriendo&ciudad={CIUDAD}`
+- **Detail API**: `https://arrendamientossantafe.com/apisf/property/{CODE}`
+- **Type**: JSON API (two phases: list + detail enrichment)
+- **Listings per page**: 12 (`per_page` in the response)
+- **Total pages**: `ceil(total / per_page)`; the response also carries `has_more`
+- **Traps**:
+  - Both responses are wrapped as `<html><body>{…json…}</body></html>`; unwrap before `json.loads`.
+  - `ciudad` filters on the accented label the API prints (`Medellín`, `Itagüí`, `La Estrella`).
+  - The public site (`/propiedades`) is now a Next.js shell with no cards and `/propiedad/{CODE}` renders client-side. The two `/apisf` endpoints are the reachable source.
 
-### Phase A — Listing cards (search pages)
+### Phase A — search records
 
 | Column | Source | Pattern |
 |--------|--------|---------|
-| `id` | `ASF-{code}` | `span.id` → `REF: A11248` |
+| `id` | `ASF-{codigo}` | `codigo` (e.g. `A64311`) |
 | `portal` | `arrendamientossantafe` | Fixed |
-| `tipo` | `p.tipo-inmueble` | `Tipo: Apartamento` → `apartamento` |
-| `precio` | `div.precio p` | `$1,600,000` → `1600000` |
-| `area` | `span.area` | `55m²` → `55` |
-| `habitaciones` | `span.alcobas` (bed icon) | `2` → `2` |
-| `parqueaderos` | `span.garaje` (car icon) | `0` → `0` |
-| `barrio` | `.sector p.d-inline` | `Ubicación: Cristo Rey` → `Cristo Rey` |
-| `url` | `.inner-card a[href]` | `/propiedad/A11248/` → prepend domain |
+| `tipo` | `type` | `Apartamento`→`apartamento`, `Casa`→`casa`; `Casa Local`, `Finca`, `Local`, `Oficina`, `Bodega` are skipped |
+| `precio` | `price_raw` | Integer; `price` is the padded string (`"$9'000'000"`) |
+| `area` | `size` | `"253 M²"` → `253` (detail record is authoritative) |
+| `habitaciones` | `bedrooms` | 0 if absent |
+| `banos` | `bathrooms` | Replaced by the detail value |
+| `parqueaderos` | — | Always 0 in the list; comes from detail |
+| `estrato` | — | Comes from detail |
+| `barrio` | `location` | Detail's `sector` wins when present |
+| `url` | `/propiedad/{codigo}` | Prefixed with the domain |
 
-### Phase B — Detail pages (`scrapling_bulk_get`)
+### Phase B — detail records (`/apisf/property/{code}`)
 
-Each card's `url` points to a server-rendered detail page. Use `scrapling_bulk_get` in parallel (no JS/Playwright needed). Extract ONLY these missing fields:
+Publishes `area`, `habitaciones`, `banos`, `parqueaderos`, `garajes`, `estrato`, `sector`, `price_raw` and `description`. Phase B is capped at 8 workers and honours `--reuse-unchanged-details`: a listing whose `id` and rent price match the active snapshot keeps its detail fields and is not re-fetched.
 
-| Column | Source | Pattern |
-|--------|--------|---------|
-| `banos` | `Baños:` in Características section | `2` → `2` |
-| `estrato` | `Estrato:` in Interior section | `4` → `4` |
+**Municipalities verified** (2026-11-05): Medellín 934 · Envigado 83 · Sabaneta 50 · Itagüí 25 · La Estrella 9 rental offers, before the residential filter. Any other city raises `UnsupportedCityError`.
 
-Detail page field locations:
-- **Características section** (`div.titulo-box-caracteristicas`): `Habitaciones`, `Baños`, `Garaje`, etc. — label on one line, value on next
-- **Interior section** (`div.titulo-box-caracteristicas` followed by detail rows): `Estrato:`, `Sector:`, `Referencia:`, etc.
-- Do NOT re-extract fields already available from cards (tipo, precio, area, habitaciones, parqueaderos, barrio)
-- If a field is absent from the detail page → keep card value (0 for numeric, "" for string)
+## Zero Genuineness
 
-### Two-phase workflow
-
-1. **Phase A**: Scrape all search result pages — get 9 fields from cards + detail page URL
-2. **Phase B**: `scrapling_bulk_get` all detail page URLs → extract `banos` and `estrato` from each
-3. **Merge**: Update banos and estrato from phase B results into phase A listings
-4. Output CSV or insert to DB with all 11 columns populated
-
-**Notes**:
-- Cards have 4 detail spans: `span.id`, `span.alcobas`, `span.garaje`, `span.area` — no bathrooms or estrato
-- Detail pages are server-rendered HTML — fast parallel fetch with `scrapling_bulk_get`
-- Icons are PNG images: `bed-icon-xs.png` (bedrooms), `car-icon-xs.png` (parking), `location-icon-xs.png` (location)
-- Property types (2026-05-18): apartamento (455), local (286), casa (137), apartaestudio (121), oficina (68), finca (41), bodega (20)
-- 83 unique neighborhoods
-- `ApartaEstudio` needs normalization to `apartaestudio`
-- URL is relative → must prepend `https://arrendamientossantafe.com`
-- Page 95+ serves stale placeholder listing (REF: A9692) — binary search with code-comparison detects the true last page
+| Field | Default 0 | Status |
+|-------|-----------|--------|
+| `estrato` | 0 | Genuine only when the detail record omits it |
+| `parqueaderos` | 0 | Genuine — the property has no parking |
