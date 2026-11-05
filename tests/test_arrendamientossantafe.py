@@ -1,50 +1,70 @@
-"""Regression coverage for SantaFe Phase-B detail reuse."""
+"""Regression coverage for SantaFe's JSON API and Phase-B detail reuse."""
 
 import argparse
+import json
 from unittest import mock
 
 import scripts.scrape_asf as asf_cli
 from scrape.arrendamientossantafe import scrape
 
+DETAIL_BASE = "https://arrendamientossantafe.com/apisf/property/"
 
-def _search_card(code: str, price: str) -> str:
-    return f"""
-    <article class="property-card">
-      <span class="id">REF: {code}</span>
-      <p class="tipo-inmueble">Tipo: Apartamento</p>
-      <div class="precio"><p>${price}</p></div>
-      <span class="area">55m²</span>
-      <span class="alcobas">2</span>
-      <span class="garaje">1</span>
-      <div class="sector"><p class="d-inline">Ubicación: Laureles</p></div>
-      <div class="inner-card"><a href="/propiedades/{code}">Detail</a></div>
-    </article>
-    """
+
+def _wrap(payload: dict) -> str:
+    """The endpoints wrap their JSON in an <html><body> prefix."""
+    return "<html><body>" + json.dumps(payload) + "</body></html>"
+
+
+def _result(code: str, price: int) -> dict:
+    return {
+        "codigo": code,
+        "title": f"Apartamento en Laureles {code}",
+        "price_raw": price,
+        "location": "Laureles",
+        "ciudad": "Medellín",
+        "type": "Apartamento",
+        "size": "55 M²",
+        "bedrooms": 2,
+        "bathrooms": 1,
+        "url": f"/propiedad/{code}",
+    }
+
+
+def _detail(code: str, banos: int, estrato: int, price: int) -> dict:
+    return {
+        "codigo": code,
+        "area": 55,
+        "habitaciones": 2,
+        "banos": banos,
+        "parqueaderos": 1,
+        "estrato": estrato,
+        "sector": "Laureles",
+        "price_raw": price,
+    }
 
 
 def _run_scrape(*, reuse: bool, previous: dict | None = None, cache_error: Exception | None = None):
-    search_url = "https://arrendamientossantafe.com/propiedades/?page=1&bussines_type=Arrendar"
-    detail_urls = {
-        "ASF-A1": "https://arrendamientossantafe.com/propiedades/A1",
-        "ASF-A2": "https://arrendamientossantafe.com/propiedades/A2",
-        "ASF-A3": "https://arrendamientossantafe.com/propiedades/A3",
-    }
-    search_html = "<li class='current'>1</li>" + "".join(
-        [
-            _search_card("A1", "1,500,000"),
-            _search_card("A2", "1,600,000"),
-            _search_card("A3", "1,700,000"),
-        ]
+    detail_urls = {code: f"{DETAIL_BASE}{code}" for code in ("A1", "A2", "A3")}
+    search_payload = _wrap(
+        {
+            "results": [
+                _result("A1", 1_500_000),
+                _result("A2", 1_600_000),
+                _result("A3", 1_700_000),
+            ],
+            "total": 3,
+            "page": 1,
+            "per_page": 12,
+            "has_more": False,
+        }
     )
     details = {
-        detail_urls["ASF-A1"]: "<div>Baños: 1 Estrato: 3</div>",
-        detail_urls["ASF-A2"]: "<div>Baños: 2 Estrato: 4</div>",
-        detail_urls["ASF-A3"]: "<div>Baños: 3 Estrato: 5</div>",
+        detail_urls["A1"]: _wrap(_detail("A1", 1, 3, 1_500_000)),
+        detail_urls["A2"]: _wrap(_detail("A2", 2, 4, 1_600_000)),
+        detail_urls["A3"]: _wrap(_detail("A3", 3, 5, 1_700_000)),
     }
 
-    def bulk_fetch(urls: list[str]) -> list[tuple[str, str]]:
-        if urls == [search_url]:
-            return [(search_url, search_html)]
+    def bulk_fetch(urls: list[str], max_workers: int | None = None):
         return [(url, details[url]) for url in urls]
 
     snapshot = (
@@ -53,7 +73,7 @@ def _run_scrape(*, reuse: bool, previous: dict | None = None, cache_error: Excep
         else mock.patch("db.get_active_listings_by_id", return_value=previous or {})
     )
     with (
-        mock.patch("scrape.arrendamientossantafe.fetch_page", return_value=search_html),
+        mock.patch("scrape.arrendamientossantafe.fetch_page", return_value=search_payload),
         mock.patch(
             "scrape.arrendamientossantafe.bulk_fetch",
             side_effect=bulk_fetch,
@@ -65,6 +85,17 @@ def _run_scrape(*, reuse: bool, previous: dict | None = None, cache_error: Excep
     return rows, bulk_fetch_mock, snapshot_mock, detail_urls
 
 
+def test_list_records_map_to_the_eleven_columns() -> None:
+    rows, _bulk, _snapshot, _urls = _run_scrape(reuse=False)
+
+    assert [row["id"] for row in rows] == ["ASF-A1", "ASF-A2", "ASF-A3"]
+    assert rows[0]["portal"] == "arrendamientossantafe"
+    assert rows[0]["tipo"] == "apartamento"
+    assert rows[0]["area"] == 55
+    assert rows[0]["barrio"] == "Laureles"
+    assert rows[0]["url"] == "https://arrendamientossantafe.com/propiedad/A1"
+
+
 def test_reuses_unchanged_cards_and_fetches_only_new_or_changed_details(capsys) -> None:
     previous = {
         "ASF-A1": {
@@ -72,6 +103,7 @@ def test_reuses_unchanged_cards_and_fetches_only_new_or_changed_details(capsys) 
             "precio": 1_500_000,
             "area": 999,
             "banos": 7,
+            "parqueaderos": 2,
             "estrato": 6,
         },
         "ASF-A2": {"id": "ASF-A2", "precio": 1_500_000, "banos": 9, "estrato": 9},
@@ -85,13 +117,14 @@ def test_reuses_unchanged_cards_and_fetches_only_new_or_changed_details(capsys) 
     assert "ASF detail reuse: 1 reused; 2 detail pages fetched" in capsys.readouterr().out
 
     snapshot_mock.assert_called_once_with("arrendamientossantafe", "medellin")
-    assert bulk_fetch_mock.call_args_list[1].args[0] == [
-        detail_urls["ASF-A2"],
-        detail_urls["ASF-A3"],
+    assert bulk_fetch_mock.call_args_list[0].args[0] == [
+        detail_urls["A2"],
+        detail_urls["A3"],
     ]
     by_id = {row["id"]: row for row in rows}
     assert by_id["ASF-A1"]["area"] == 55
     assert by_id["ASF-A1"]["banos"] == 7
+    assert by_id["ASF-A1"]["parqueaderos"] == 2
     assert by_id["ASF-A1"]["estrato"] == 6
     assert by_id["ASF-A2"]["banos"] == 2
     assert by_id["ASF-A2"]["estrato"] == 4
@@ -106,7 +139,7 @@ def test_disabled_reuse_keeps_the_existing_full_detail_path() -> None:
     )
 
     snapshot_mock.assert_not_called()
-    assert bulk_fetch_mock.call_args_list[1].args[0] == list(detail_urls.values())
+    assert bulk_fetch_mock.call_args_list[0].args[0] == list(detail_urls.values())
     assert [(row["banos"], row["estrato"]) for row in rows] == [(1, 3), (2, 4), (3, 5)]
 
 
@@ -117,7 +150,7 @@ def test_cache_failure_falls_back_to_full_detail_fetch() -> None:
     )
 
     snapshot_mock.assert_called_once_with("arrendamientossantafe", "medellin")
-    assert bulk_fetch_mock.call_args_list[1].args[0] == list(detail_urls.values())
+    assert bulk_fetch_mock.call_args_list[0].args[0] == list(detail_urls.values())
     assert [(row["banos"], row["estrato"]) for row in rows] == [(1, 3), (2, 4), (3, 5)]
 
 

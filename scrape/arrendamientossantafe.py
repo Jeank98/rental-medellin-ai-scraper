@@ -1,16 +1,23 @@
-"""Arrendamientos SantaFe (ASF) — Two-Phase HTML Scraper.
+"""Arrendamientos SantaFe (ASF) — two-phase JSON API scraper.
 
-Phase A: Parse listing cards (.property-card) from search result pages.
-Phase B: Fetch detail pages via bulk_fetch to extract banos + estrato.
+The portal was rebuilt as a Next.js app: the old server-rendered
+``/propiedades`` HTML (``.property-card``) no longer exists and the page ships
+only a client shell. Both phases now read the app's own JSON endpoints:
 
-Cards have 9 of 11 fields visible; banos and estrato require detail pages.
-Detail pages are server-rendered Django — fast parallel fetch without JS.
+Phase A: ``/apisf/properties?page=N&oferta=Arriendo&ciudad=<label>`` (12/page).
+Phase B: ``/apisf/property/<code>`` for estrato, parqueaderos and the
+         authoritative area/rooms.
+
+Both responses are wrapped in ``<html><body>…</body></html>``, so they are
+unwrapped before parsing.
 """
 
+import json
 import logging
+import math
 import re
-
-from bs4 import BeautifulSoup
+from typing import Final
+from urllib.parse import quote
 
 from scrape.detail_reuse import (
     DetailReusePlan,
@@ -23,14 +30,33 @@ from scrape.normalize import (
     normalize_estrato,
     normalize_price,
     normalize_tipo,
-    normalize_url,
 )
 from scrape.validator import validate
 
 logger = logging.getLogger(__name__)
 
+PORTAL: Final = "arrendamientossantafe"
+_BASE_URL: Final = "https://arrendamientossantafe.com"
+_API_SEARCH: Final = f"{_BASE_URL}/apisf/properties"
+_API_DETAIL: Final = f"{_BASE_URL}/apisf/property"
+_PER_PAGE: Final = 12
+_DETAIL_WORKERS: Final = 8
 
-_DETAIL_FIELDS = ("banos", "estrato")
+CITY_LABELS: Final[dict[str, str]] = {
+    "medellin": "Medellín",
+    "medellín": "Medellín",
+    "envigado": "Envigado",
+    "itagui": "Itagüí",
+    "itagüí": "Itagüí",
+    "sabaneta": "Sabaneta",
+    "la estrella": "La Estrella",
+}
+
+RESIDENTIAL_TYPES: Final = {"apartamento", "apartaestudio", "casa"}
+
+_DETAIL_FIELDS = ("banos", "estrato", "parqueaderos")
+
+_WRAPPER_RE = re.compile(r"^\s*<html><body>|</body></html>\s*$", re.IGNORECASE)
 
 
 def _plan_phase_b(
@@ -44,7 +70,7 @@ def _plan_phase_b(
 
     plan = plan_active_detail_reuse(
         listings,
-        "arrendamientossantafe",
+        PORTAL,
         ciudad,
         _DETAIL_FIELDS,
     )
@@ -60,188 +86,136 @@ def _plan_phase_b(
     return plan
 
 
-_BASE_URL = "https://arrendamientossantafe.com"
-_SEARCH_URL = f"{_BASE_URL}/propiedades/"
-_PAGE_PARAMS = "bussines_type=Arrendar"
-_STALE_CODE = "A9692"
-_PER_PAGE = 12
-
-_COLUMNS = [
-    "id",
-    "portal",
-    "tipo",
-    "precio",
-    "area",
-    "habitaciones",
-    "banos",
-    "parqueaderos",
-    "estrato",
-    "barrio",
-    "url",
-]
+class UnsupportedCityError(KeyError):
+    """Raised when the requested city has no verified SantaFe filter."""
 
 
-def _page_url(page: int) -> str:
-    return f"{_SEARCH_URL}?page={page}&{_PAGE_PARAMS}"
+def resolve_city_label(ciudad: str) -> str:
+    key = " ".join(str(ciudad).strip().casefold().replace("-", " ").split())
+    if key in CITY_LABELS:
+        return CITY_LABELS[key]
+    known = ["medellin", "envigado", "itagui", "sabaneta", "la estrella"]
+    raise UnsupportedCityError(
+        f"SantaFe has no verified filter for {ciudad!r}; known: {known}"
+    )
 
 
-def _extract_card(card) -> dict:
-    """Extract 9 available fields from a single .property-card element.
-
-    Returns a dict with all 11 columns; banos and estrato default to 0
-    (filled in Phase B from detail pages).
-    """
-    listing = dict.fromkeys(_COLUMNS, "")
-    listing["portal"] = "arrendamientossantafe"
-    for key in ("precio", "area", "habitaciones", "banos", "parqueaderos", "estrato"):
-        listing[key] = 0
-
-    # ID: span.id → "REF: A11248"
-    id_span = card.select_one("span.id")
-    if id_span:
-        text = id_span.get_text(strip=True)
-        if ":" in text:
-            code = text.split(":")[-1].strip()
-            if code:
-                listing["id"] = f"ASF-{code}"
-
-    # Tipo: p.tipo-inmueble → "Tipo: Apartamento"
-    tipo_p = card.select_one("p.tipo-inmueble")
-    if tipo_p:
-        text = tipo_p.get_text(strip=True)
-        raw = text.split(":", 1)[-1].strip() if ":" in text else text
-        listing["tipo"] = normalize_tipo(raw)
-
-    # Precio: div.precio p → "$1,600,000"
-    precio_div = card.select_one("div.precio p")
-    if precio_div:
-        listing["precio"] = normalize_price(precio_div.get_text(strip=True))
-
-    # Area: span.area → "55m²" or "55m2"
-    area_span = card.select_one("span.area")
-    if area_span:
-        text = area_span.get_text(strip=True)
-        # Extract digits before 'm' (handles both "55m²" and "55m2")
-        digits = text.split("m")[0].strip()
-        digits = "".join(c for c in digits if c.isdecimal())
-        if digits:
-            listing["area"] = int(digits)
-
-    # Habitaciones: span.alcobas → "2"
-    hab_span = card.select_one("span.alcobas")
-    if hab_span:
-        text = hab_span.get_text(strip=True)
-        digits = "".join(c for c in text if c.isdecimal())
-        if digits:
-            listing["habitaciones"] = int(digits)
-
-    # Parqueaderos: span.garaje → "0"
-    gar_span = card.select_one("span.garaje")
-    if gar_span:
-        text = gar_span.get_text(strip=True)
-        digits = "".join(c for c in text if c.isdecimal())
-        if digits:
-            listing["parqueaderos"] = int(digits)
-
-    # Barrio: .sector p.d-inline → "Ubicación: Cristo Rey"
-    sector_p = card.select_one(".sector p.d-inline")
-    if sector_p:
-        text = sector_p.get_text(strip=True)
-        raw = text.split(":", 1)[-1].strip() if ":" in text else text
-        listing["barrio"] = normalize_barrio(raw)
-
-    # URL: .inner-card a[href] → prepend domain
-    link = card.select_one(".inner-card a[href]")
-    if link:
-        href = link.get("href", "")
-        listing["url"] = normalize_url(href, _BASE_URL)
-
-    return listing
+def _unwrap(raw: str) -> str:
+    return _WRAPPER_RE.sub("", str(raw).strip())
 
 
-def _parse_search_page(html: str) -> list[dict]:
-    """Parse all valid listing cards from one search result page."""
-    soup = BeautifulSoup(html, "html.parser")
-    cards = soup.select(".property-card")
-    listings = []
-    for card in cards:
-        listing = _extract_card(card)
-        # Filter stale placeholder cards served beyond the real last page
-        if _STALE_CODE in listing.get("id", ""):
-            continue
-        listings.append(listing)
-    return listings
+def search_url(page: int, ciudad_label: str) -> str:
+    return (
+        f"{_API_SEARCH}?page={page}&oferta=Arriendo"
+        f"&ciudad={quote(ciudad_label)}"
+    )
 
 
-def _extract_detail_banos(html: str) -> int:
-    """Extract banos count from a detail page's Caracteristicas section."""
-    soup = BeautifulSoup(html, "html.parser")
-    text = soup.get_text(separator=" ")
-    m = re.search(r"Ba[ñn]os?\s*:?\s*(\d+)", text, re.IGNORECASE)
-    if m:
-        return int(m.group(1))
+def detail_url(code: str) -> str:
+    return f"{_API_DETAIL}/{code}"
+
+
+def parse_json_payload(raw: str) -> dict:
+    body = _unwrap(raw)
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"SantaFe returned a non-JSON payload: {error}") from error
+
+
+def _int(value) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        return normalize_price(value)
     return 0
 
 
-def _extract_detail_estrato(html: str) -> int:
-    """Extract estrato from a detail page's Interior section."""
-    soup = BeautifulSoup(html, "html.parser")
-    text = soup.get_text(separator=" ")
-    m = re.search(r"Estrato\s*:?\s*(\d+)", text, re.IGNORECASE)
-    if m:
-        return normalize_estrato(int(m.group(1)))
-    return 0
+def to_listing(item: dict) -> dict | None:
+    """Map one search record to the 11-column schema (detail fields still 0)."""
+    code = str(item.get("codigo") or item.get("id") or "").strip()
+    if not code:
+        return None
+
+    tipo = normalize_tipo(item.get("type") or item.get("tipo") or "")
+    if tipo not in RESIDENTIAL_TYPES:
+        return None
+
+    precio = _int(item.get("price_raw")) or normalize_price(item.get("price") or "")
+    if precio <= 0:
+        return None
+
+    return {
+        "id": f"ASF-{code}",
+        "portal": PORTAL,
+        "tipo": tipo,
+        "precio": precio,
+        "area": _int(str(item.get("size") or "").split("M")[0]),
+        "habitaciones": _int(item.get("bedrooms")),
+        "banos": _int(item.get("bathrooms")),
+        "parqueaderos": _int(item.get("parqueaderos")),
+        "estrato": 0,
+        "barrio": normalize_barrio(item.get("location") or ""),
+        "url": f"{_BASE_URL}{item.get('url') or f'/propiedad/{code}'}",
+    }
+
+
+def _apply_detail(listing: dict, detail: dict) -> None:
+    """Overlay the authoritative detail fields onto a listing."""
+    area = _int(detail.get("area"))
+    if area:
+        listing["area"] = area
+    for field, key in (
+        ("habitaciones", "habitaciones"),
+        ("banos", "banos"),
+        ("parqueaderos", "parqueaderos"),
+    ):
+        value = _int(detail.get(key))
+        if value:
+            listing[field] = value
+    estrato = normalize_estrato(_int(detail.get("estrato")))
+    if estrato:
+        listing["estrato"] = estrato
+    if detail.get("sector"):
+        listing["barrio"] = normalize_barrio(detail["sector"]) or listing["barrio"]
+    precio = _int(detail.get("price_raw"))
+    if precio > 0:
+        listing["precio"] = precio
 
 
 def _phase_b(listings: list[dict], verbose: bool = False) -> list[dict]:
-    """Phase B: bulk-fetch detail pages, extract banos + estrato, merge.
-
-    Uses fetcher.bulk_fetch (ThreadPoolExecutor) for parallel HTTP.
-    Failed pages leave card defaults (0) intact.
-    """
-    urls = [l["url"] for l in listings if l["url"]]
-    if not urls:
+    """Phase B: fetch detail JSON per listing and merge the richer fields."""
+    targets = [listing for listing in listings if listing["id"].startswith("ASF-")]
+    if not targets:
         return listings
 
-    if verbose or True:  # always show progress
-        logger.info("ASF Phase B: fetching %d detail pages...", len(urls))
+    codes = [listing["id"].split("ASF-", 1)[1] for listing in targets]
+    urls = [detail_url(code) for code in codes]
 
-    # Suppress Scrapling's per-request INFO logs during bulk fetch
-    import scrapling
-
-    old_level = logging.getLogger("scrapling").level
     logging.getLogger("scrapling").setLevel(logging.WARNING)
+    try:
+        results = bulk_fetch(urls, max_workers=_DETAIL_WORKERS)
+    finally:
+        logging.getLogger("scrapling").setLevel(logging.NOTSET)
 
-    results = bulk_fetch(urls)
-
-    logging.getLogger("scrapling").setLevel(old_level)
     detail_map = dict(results)
-
-    banos_set = 0
-    estrato_set = 0
-
-    for listing in listings:
-        html = detail_map.get(listing["url"], "")
-        if not html:
+    enriched = 0
+    for listing, url in zip(targets, urls):
+        raw = detail_map.get(url)
+        if not raw:
             continue
-        banos = _extract_detail_banos(html)
-        estrato = _extract_detail_estrato(html)
-        if banos:
-            listing["banos"] = banos
-            banos_set += 1
-        if estrato:
-            listing["estrato"] = estrato
-            estrato_set += 1
+        try:
+            _apply_detail(listing, parse_json_payload(raw))
+            enriched += 1
+        except ValueError as error:
+            if verbose:
+                logger.warning("ASF detail parse failed for %s: %s", listing["id"], error)
 
-    if verbose:
-        logger.info(
-            "ASF Phase B: banos=%d/%d non-zero, estrato=%d/%d non-zero",
-            banos_set,
-            len(listings),
-            estrato_set,
-            len(listings),
-        )
-
+    logger.info("ASF Phase B: %d/%d detailed", enriched, len(targets))
     return listings
 
 
@@ -252,73 +226,56 @@ def scrape(
     verbose=False,
     reuse_unchanged_details: bool = False,
 ) -> list[dict]:
-    """Scrape Arrendamientos SantaFe rental listings (two-phase).
+    """Scrape Arrendamientos SantaFe rentals for one municipality.
 
-    Phase A: Binary-search last page, then bulk_fetch all search pages
-             in parallel (32 workers). Extracts 9 card-level fields.
-    Phase B: bulk-fetch all detail pages for banos + estrato.
+    Phase A: paginate the search API (12 per page, ``total``/``has_more``).
+    Phase B: fetch each listing's detail JSON for estrato/parqueaderos.
     """
+    label = resolve_city_label(ciudad)
     if sample_only and max_pages is None:
         max_pages = 3
 
-    listings: list[dict] = []
-    anomalies: list[str] = []
-
-    # --- Phase A: Discover last page + parallel fetch ---
-    # Step 1: Request page=9999 to discover the real last page
-    # The server redirects to the last valid page; pagination shows the number
-    html = fetch_page(_page_url(9999))
-    last_page = 1
-    if html:
-        soup = BeautifulSoup(html, "lxml")
-        current_el = soup.select_one(".current, .pager-position.current, li.current")
-        if current_el:
-            text = current_el.get_text(strip=True)
-            if text.isdecimal():
-                last_page = int(text)
-    if last_page <= 1:
-        last_page = 1  # fallback
-
+    first = parse_json_payload(str(fetch_page(search_url(1, label))))
+    total = _int(first.get("total"))
+    total_pages = max(1, math.ceil(total / _PER_PAGE)) if total else 1
     if max_pages is not None:
-        last_page = min(last_page, max_pages)
+        total_pages = min(total_pages, max_pages)
 
     if verbose:
-        logger.info("ASF: %d search pages — fetching in parallel...", last_page)
+        logger.info("ASF: %s total=%s paginas=%d", label, total, total_pages)
 
-    # Step 2: Generate all page URLs and bulk_fetch in parallel
-    page_urls = [_page_url(p) for p in range(1, last_page + 1)]
-    page_results = bulk_fetch(page_urls)
+    pages: list[dict] = [first]
+    if total_pages > 1:
+        rest_urls = [search_url(page, label) for page in range(2, total_pages + 1)]
+        for _url, raw in bulk_fetch(rest_urls, max_workers=_DETAIL_WORKERS):
+            if not raw:
+                continue
+            try:
+                pages.append(parse_json_payload(raw))
+            except ValueError:
+                continue
 
-    # Step 3: Parse all pages
-    for url, html in page_results:
-        if not html:
-            continue
-        page_listings = _parse_search_page(html)
-        for listing in page_listings:
+    listings: list[dict] = []
+    seen: set[str] = set()
+    for payload in pages:
+        for item in payload.get("results") or []:
+            listing = to_listing(item)
+            if listing is None or listing["id"] in seen:
+                continue
+            seen.add(listing["id"])
+            validate(listing)
             listings.append(listing)
-            warnings = validate(listing)
-            if warnings:
-                anomalies.extend(warnings)
-                if verbose:
-                    for w in warnings:
-                        print(f"  [ANOMALY] {listing['id']} — {w}")
 
     if verbose:
-        logger.info("ASF Phase A: %d listings from %d pages", len(listings), last_page)
+        logger.info("ASF Phase A: %d listings from %d pages", len(listings), total_pages)
 
     if not listings:
         return []
 
-    # --- Phase B: Detail pages ---
     plan = _plan_phase_b(listings, ciudad, reuse_unchanged_details)
     _phase_b(plan.detail_listings, verbose=verbose)
 
     if sample_only:
         print(f"Sample: {len(listings)} listing(s) extracted")
-
-    if anomalies:
-        print(
-            f"\n{len(anomalies)} anomaly(s) detected across {len(listings)} listings."
-        )
 
     return listings
