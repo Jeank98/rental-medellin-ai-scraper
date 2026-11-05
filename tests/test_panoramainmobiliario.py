@@ -338,7 +338,7 @@ class TestTwoPhaseScrape(unittest.TestCase):
         )
         self.assertEqual(rows[0]["barrio"], "Aliadas")
 
-    def test_phase_b_rejects_completely_unenriched_batch(self):
+    def test_phase_b_publishes_cards_when_every_detail_page_is_missing(self):
         listing = {
             "id": "PAN-1",
             "portal": "panoramainmobiliario",
@@ -353,12 +353,48 @@ class TestTwoPhaseScrape(unittest.TestCase):
             "url": "https://example.test/PAN-1",
         }
 
+        # The portal's own detail links answer its 404 page, so a total outage
+        # must degrade to card data instead of blocking the refresh.
         with mock.patch(
             "scrape.panoramainmobiliario.bulk_fetch",
-            return_value=[(listing["url"], "")],
+            return_value=[(listing["url"], "<html>Upps ! error-404</html>")],
+        ):
+            rows = _phase_b(
+                [listing],
+                "medellin",
+                verbose=False,
+                reuse_unchanged_details=False,
+            )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["precio"], 1_500_000)
+        self.assertEqual(rows[0]["estrato"], 0)
+
+    def test_phase_b_still_rejects_a_partially_enriched_batch(self):
+        first = {
+            "id": "PAN-1",
+            "portal": "panoramainmobiliario",
+            "tipo": "apartaestudio",
+            "precio": 1_500_000,
+            "area": 40,
+            "habitaciones": 1,
+            "banos": 1,
+            "parqueaderos": 0,
+            "estrato": 0,
+            "barrio": "",
+            "url": "https://example.test/PAN-1",
+        }
+        second = {**first, "id": "PAN-2", "url": "https://example.test/PAN-2"}
+
+        with mock.patch(
+            "scrape.panoramainmobiliario.bulk_fetch",
+            return_value=[
+                (first["url"], _load("detail_apartaestudio.html")),
+                (second["url"], ""),
+            ],
         ), self.assertRaises(DetailEnrichmentError):
             _phase_b(
-                [listing],
+                [first, second],
                 "medellin",
                 verbose=False,
                 reuse_unchanged_details=False,

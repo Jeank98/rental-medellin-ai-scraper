@@ -11,14 +11,19 @@
 
 ## Verified source URLs
 
+The portal moved to path-based search (`/s/{tipo}/alquileres`). The legacy
+`/search?…&for_rent=1` URL still answers 200 but now returns **sale** cards, so
+filtering by it silently mixes operaciones. Detail pages can answer the portal's
+own soft-404 page: those listings are dropped instead of published.
+
 Panorama's unfiltered search mixes residential and commercial inventory. The
 scraper must query the three residential streams separately:
 
 | Type | `id_property_type` | Source |
 |---|---:|---|
-| Apartaestudio | `14` | `/search?id_city=496&id_property_type=14&business_type%5B0%5D=for_rent&order_by=created_at&order=desc&page=N&for_sale=0&for_rent=1&for_temporary_rent=0&for_transfer=0&lax_business_type=1` |
-| Apartamento | `2` | Same URL with `id_property_type=2` |
-| Casa | `1` | Same URL with `id_property_type=1` |
+| Apartaestudio | `14` | `/s/apartaestudio/alquileres?id_property_type=14&business_type%5B0%5D=for_rent&id_city=496&page=N` |
+| Apartamento | `2` | `/s/apartamento/alquileres?id_property_type=2&business_type%5B0%5D=for_rent&id_city=496&page=N` |
+| Casa | `1` | `/s/casa/alquileres?id_property_type=1&business_type%5B0%5D=for_rent&id_city=496&page=N` |
 
 The result page has 12 cards per page in the verified live sample. Continue
 until the filtered page has no cards or fewer than 12 cards. The observed live

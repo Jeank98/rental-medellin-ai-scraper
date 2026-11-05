@@ -130,20 +130,15 @@ def build_page_url(
     if property_type not in TYPE_IDS:
         raise ValueError(f"unsupported residential type: {property_type}")
 
+    # The portal moved to a path-based search: /s/{tipo}/alquileres. The old
+    # /search?for_rent=1 URL still answers 200 but silently lists SALE cards.
     query = [
-        ("id_city", city_id),
         ("id_property_type", TYPE_IDS[property_type]),
         ("business_type[0]", "for_rent"),
-        ("order_by", "created_at"),
-        ("order", "desc"),
+        ("id_city", city_id),
         ("page", str(page)),
-        ("for_sale", "0"),
-        ("for_rent", "1"),
-        ("for_temporary_rent", "0"),
-        ("for_transfer", "0"),
-        ("lax_business_type", "1"),
     ]
-    return f"{BASE_URL}/search?{urlencode(query)}"
+    return f"{BASE_URL}/s/{property_type}/alquileres?{urlencode(query)}"
 
 
 def _lines(node: Tag | BeautifulSoup) -> list[str]:
@@ -450,6 +445,16 @@ def _plan_phase_b(
     return plan
 
 
+def _detail_is_gone(url: str) -> bool:
+    """True when the portal answers that URL with its own 404 page."""
+    try:
+        body = str(fetch_page(url))
+    except Exception:  # noqa: BLE001 - network errors are not "gone"
+        return False
+    lowered = body.casefold()
+    return "error-404" in lowered or "error 404" in lowered
+
+
 def _phase_b(
     listings: list[Listing],
     ciudad: str,
@@ -487,11 +492,48 @@ def _phase_b(
             )
 
     if pending:
+        # A card whose detail URL answers the portal's 404 page is a listing
+        # the inmobiliaria already removed: publishing it would leave a dead
+        # link in the sheet, so it is dropped instead of retried forever.
+        gone = [row for row in pending if _detail_is_gone(str(row["url"]))]
+        if gone:
+            gone_ids = {str(row["id"]) for row in gone}
+            listings = [row for row in listings if str(row["id"]) not in gone_ids]
+            pending = [row for row in pending if str(row["id"]) not in gone_ids]
+            logger.warning(
+                "Panorama dropped %d listing(s) whose detail page is gone: %s",
+                len(gone),
+                ", ".join(sorted(gone_ids)),
+            )
+            print(
+                f"Anomaly: {len(gone)} Panorama listing(s) point to a dead "
+                "detail page and were dropped: " + ", ".join(sorted(gone_ids))
+            )
+
+    if pending:
         ids = ", ".join(str(row["id"]) for row in pending)
-        raise DetailEnrichmentError(
-            "Panorama detail enrichment failed after "
-            f"{MAX_DETAIL_BATCH_ATTEMPTS} batch attempt(s): {ids}"
-        )
+        if len(pending) == plan.detail_fetch_count:
+            # Total outage: every detail URL on the portal answers its own
+            # soft-404 page. Cards still carry price/area/rooms/baths, and the
+            # reuse path keeps prior estrato, so publish with a loud warning
+            # instead of blocking the whole refresh on the portal's bug.
+            logger.error(
+                "Panorama detail pages are unavailable (%d/%d failed); "
+                "publishing card data only: %s",
+                len(pending),
+                plan.detail_fetch_count,
+                ids,
+            )
+            print(
+                "Anomaly: Panorama detail pages return the portal's 404 page; "
+                f"{len(pending)} listing(s) published without detail enrichment. "
+                "Estrato comes from reuse or stays 0."
+            )
+        else:
+            raise DetailEnrichmentError(
+                "Panorama detail enrichment failed after "
+                f"{MAX_DETAIL_BATCH_ATTEMPTS} batch attempt(s): {ids}"
+            )
 
     for row in listings:
         warnings = validate(row)
