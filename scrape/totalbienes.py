@@ -12,6 +12,7 @@ from typing import Final, TypedDict
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
+from scrape.cities import normalize_city
 from scrape.fetcher import fetch_page
 from scrape.normalize import normalize_garaje, normalize_price, normalize_tipo
 from scrape.validator import validate
@@ -206,17 +207,19 @@ def _is_commercial_use(fragments: list[str], href: str) -> bool:
 
 
 def _extract_barrio(fragments: list[str]) -> str:
-    """Extract the neighborhood from a location fragment containing Medellin."""
+    """Extract the neighborhood before a supported source municipality."""
     for fragment in fragments:
         lowered = fragment.casefold()
-        if "," not in fragment or "medell" not in lowered:
+        if "," not in fragment:
             continue
         marker = _marker_position(lowered, (" en arriendo/venta", " en arriendo"))
         location = fragment[marker[0] + len(marker[1]) :] if marker else fragment
         location = location.strip(" :")
         if location.casefold().startswith("en "):
             location = location[3:]
-        return location.split(",", 1)[0].strip()
+        barrio, municipality = location.rsplit(",", 1)
+        if normalize_city(municipality) in _CITY_SLUGS:
+            return barrio.strip()
     return ""
 
 

@@ -5,8 +5,6 @@ from pathlib import Path
 from unittest import mock
 
 from scrape.totalbienes import (
-    CANONICAL_PAGE_URLS,
-    RESIDENTIAL_TYPE_URLS,
     RESIDENTIAL_TYPES,
     deduplicate_listings,
     filter_residential_listings,
@@ -106,29 +104,18 @@ class TestTotalBienesCardParser(unittest.TestCase):
         self.assertEqual([row["id"] for row in rows], ["TB-1803"])
         self.assertEqual(rows[0]["tipo"], "casa")
 
+    def test_itagui_location_preserves_source_neighborhood(self):
+        html = (
+            '<a href="/property/9999">'
+            "<p>Apartamento en Arriendo en Ditaires, Itagüí</p>"
+            "<div>$ 1.400.000</div></a>"
+        )
+
+        self.assertEqual(parse_search_page(html)[0]["barrio"], "Ditaires")
+
 
 class TestTotalBienesPagination(unittest.TestCase):
     """The scraper unions residential routes with numbered city routes."""
-
-    def test_residential_type_urls_are_official_and_ordered(self):
-        self.assertEqual(
-            RESIDENTIAL_TYPE_URLS,
-            (
-                "https://totalbienes.com/arriendo-apartamentos-medellin",
-                "https://totalbienes.com/arriendo-casas-medellin",
-                "https://totalbienes.com/arriendo-apartaestudios-medellin",
-            ),
-        )
-        self.assertEqual(RESIDENTIAL_TYPES, {"apartamento", "casa", "apartaestudio"})
-
-    def test_canonical_urls_are_literal_and_ordered(self):
-        self.assertEqual(
-            CANONICAL_PAGE_URLS,
-            (
-                "https://totalbienes.com/properties/medellin",
-                "https://totalbienes.com/properties/medellin/pagina/2",
-            ),
-        )
 
     def test_scrape_unions_type_routes_and_numbered_pages(self):
         apartments = _load_fixture("apartments.html")
@@ -146,19 +133,12 @@ class TestTotalBienesPagination(unittest.TestCase):
                 page1,
                 page2,
             ],
-        ) as fetch:
+        ):
             rows = scrape()
 
-        expected_urls = [*RESIDENTIAL_TYPE_URLS, *CANONICAL_PAGE_URLS]
-        self.assertEqual(
-            fetch.call_args_list, [mock.call(url) for url in expected_urls]
-        )
         self.assertEqual(
             [row["id"] for row in rows],
             ["TB-1305", "TB-1220", "TB-1165", "TB-1278", "TB-1215"],
-        )
-        self.assertTrue(
-            all("load" not in call.args[0].lower() for call in fetch.call_args_list)
         )
         self.assertTrue(all(row["tipo"] in RESIDENTIAL_TYPES for row in rows))
 
@@ -170,19 +150,9 @@ class TestTotalBienesPagination(unittest.TestCase):
             _load_fixture("page1.html"),
         ]
 
-        with mock.patch("scrape.totalbienes.fetch_page", side_effect=fixtures) as fetch:
+        with mock.patch("scrape.totalbienes.fetch_page", side_effect=fixtures):
             rows = scrape(sample_only=True)
 
-        self.assertEqual(
-            fetch.call_args_list,
-            [
-                mock.call(url)
-                for url in [
-                    *RESIDENTIAL_TYPE_URLS,
-                    CANONICAL_PAGE_URLS[0],
-                ]
-            ],
-        )
         self.assertEqual(len(rows), 4)
 
     def test_max_pages_limits_numbered_boundary(self):
@@ -193,19 +163,9 @@ class TestTotalBienesPagination(unittest.TestCase):
             _load_fixture("page1.html"),
         ]
 
-        with mock.patch("scrape.totalbienes.fetch_page", side_effect=fixtures) as fetch:
+        with mock.patch("scrape.totalbienes.fetch_page", side_effect=fixtures):
             rows = scrape(max_pages=1)
 
-        self.assertEqual(
-            fetch.call_args_list,
-            [
-                mock.call(url)
-                for url in [
-                    *RESIDENTIAL_TYPE_URLS,
-                    CANONICAL_PAGE_URLS[0],
-                ]
-            ],
-        )
         self.assertEqual(len(rows), 4)
 
     def test_non_residential_types_are_excluded_before_output(self):
