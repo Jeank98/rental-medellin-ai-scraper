@@ -1,7 +1,7 @@
 # Coninsa (`CON`)
 
 - **URL**: `https://www.coninsa.co/arrendamientos/vivienda/?text=Medellin`
-- **Municipalities** (`fulltext` key): Medellin, Envigado, Itagui, Sabaneta, La Estrella
+- **Municipalities** (`fulltext` candidates, `city_string` ownership): Medellin, Envigado, Itagui, Sabaneta, La Estrella
 - **Type**: Gatsby SPA with Drupal GraphQL backend
 - **Scraping method**: Direct GraphQL API (Search API), no browser needed
 - **GraphQL endpoint**: `https://admindrupal.coninsa.co/graphql`
@@ -30,6 +30,7 @@ query = """query SearchProperties($offset: Int!, $limit: Int!) {
     documents {
       ... on SearchPropertiesDoc {
         code
+        city_string
         property_type
         field_lease_value
         field_area
@@ -48,7 +49,7 @@ resp = f.post("https://admindrupal.coninsa.co/graphql", json={"query": query, "v
 
 ### Key query parameters
 - `index_id`: `"search_properties"` — the Search API index for property listings
-- `fulltext: {keys: "Medellin"}` — full-text search for Medellín
+- `fulltext: {keys: "Medellin"}` — broad full-text candidate search; matches can belong to other municipalities
 - `conditions: [{name: "field_service_type", value: "AR", operator: "EQUAL"}]` — filter to Arriendo only (AR = rental, CO = corretaje/sale)
 - `range: {offset, limit}` — pagination, max 200 per page
 
@@ -73,6 +74,9 @@ The Gatsby SPA loads listing data at runtime via GraphQL. Rendered HTML text saw
 
 ### Residential filter
 Only keep `property_type` in: `Apartamento`, `Casa`, `Casa finca`. Exclude: `Local`, `Oficina`, `Bodega`, `Consultorio`, `Por definir`.
+
+### Municipality filter
+Normalize each residential document's `city_string` and keep only exact matches to the requested municipality. Other municipalities are excluded; missing, blank, or non-string `city_string` fails the scrape rather than assigning an unknown owner.
 
 ### Data volume
 - ~327 total AR (rental) listings in Medellín across all property types
