@@ -29,7 +29,7 @@
 | `banos` | `baños` / `baño` | Integer; absent is `0` |
 | `parqueaderos` | `parqueadero: Sí` or `No` | `Sí` = 1, `No` = 0 |
 | `estrato` | `estrato N` | Integer 1-6 |
-| `barrio` | Card location ending in `, Medellín` | Text before municipality |
+| `barrio` | Card location ending in `, Medellín` or `, Itagüí` | Text before the supported municipality; accented and unaccented city labels are accepted |
 | `url` | Card href | Absolute `https://totalbienes.com/property/{numeric}` |
 
 ## Residential Source Strategy
