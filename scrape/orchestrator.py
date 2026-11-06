@@ -104,6 +104,7 @@ PORTALS = {
     "arrendamientosenvigado": {"module": "arrendamientosenvigado"},
     "inmobiliarialaestrella": {"module": "inmobiliarialaestrella"},
     "lonjainmobiliariadelsur": {"module": "lonjainmobiliariadelsur"},
+    "arrendamientoslasvegas": {"module": "lasvegas", "script": "lasvegas"},
 }
 
 def _script_name(portal: str) -> str:

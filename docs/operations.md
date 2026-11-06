@@ -123,7 +123,8 @@ la-estrella), `zitios` (medellin, envigado, itagui, sabaneta; La Estrella's
 slug is still unknown), `maxibienes`, `panoramainmobiliario`, `lapalma`,
 `portadainmobiliaria` and `coninsa` (all four south municipalities),
 `habitamos` (all five, through its JSON search API),
-`arrendamientossantafe` (all five, through `/apisf/properties?ciudad=…`) plus
+`arrendamientossantafe` (all five, through `/apisf/properties?ciudad=…`),
+`arrendamientoslasvegas` (all five, through `/api/properties?city=…`) plus
 `totalbienes` (medellin and itagui only — the rest 404). These verified adapters
 reject unsupported municipalities.
 

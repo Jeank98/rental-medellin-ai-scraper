@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+"""Scrape Arrendamientos Las Vegas rental listings."""
+
+import sys
+
+sys.path.insert(0, ".")
+
+from scrape.cli import create_parser, run_scraper
+from scrape.lasvegas import scrape
+
+
+def main() -> int:
+    parser = create_parser("arrendamientoslasvegas", "Scrape Arrendamientos Las Vegas rentals")
+    args = parser.parse_args()
+    return run_scraper(
+        scraper_fn=lambda: scrape(
+            ciudad=args.ciudad,
+            sample_only=args.sample_only,
+            max_pages=args.max_pages,
+            verbose=args.verbose,
+        ),
+        portal=args.portal,
+        args=args,
+    )
+
+
+if __name__ == "__main__":
+    sys.exit(main())
