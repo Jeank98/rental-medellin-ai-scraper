@@ -22,6 +22,11 @@ RETRY_ATTEMPTS = 2
 RETRY_DELAY_SECONDS = 5.0
 SHEET_TIMEOUT_SECONDS = 900
 BACKUP_PREFIX = "rental_scraper_"
+# A single portal that stops responding used to hold a worker for an hour and
+# stalled whole runs for hours (santillana, panorama and lapalma hung for 100+
+# minutes). The slowest healthy portal takes ~6.5 min, so 20 min is generous.
+PORTAL_TIMEOUT_SECONDS = 1200
+
 BACKUP_RETENTION = 3
 _PG_CONNECTION_ENV = {
     "host": "PGHOST",
@@ -294,7 +299,7 @@ def parallel_scrape(
             command.append("--reuse-unchanged-details")
         result = run_with_retries(
             command,
-            timeout=3600,
+            timeout=PORTAL_TIMEOUT_SECONDS,
             max_attempts=RETRY_ATTEMPTS,
             retry_delay=RETRY_DELAY_SECONDS,
         )
