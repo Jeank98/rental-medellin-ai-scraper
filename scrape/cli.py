@@ -80,6 +80,11 @@ def create_parser(portal: str, description: str) -> argparse.ArgumentParser:
         action='store_true',
         help='Detailed extraction logging',
     )
+    parser.add_argument(
+        '--allow-empty',
+        action='store_true',
+        help='Treat 0 listings as an empty city (exit 0, snapshot preserved)',
+    )
     return parser
 
 
@@ -101,8 +106,14 @@ def run_scraper(scraper_fn, portal: str = None, args: argparse.Namespace = None)
         print(f"Error: scraper failed for {portal}: {error}", file=sys.stderr)
         return 1
 
-    # SAMPLE-FIRST: if scraper returns 0 rows, exit with error
+    # A completed crawl with nothing to store is not a break: some portals
+    # genuinely have no inventory in a municipality. With --allow-empty it is
+    # reported as "empty" and nothing is written (the snapshot is preserved).
     if len(rows) == 0:
+        if getattr(args, "allow_empty", False):
+            _emit_result(portal, "empty", 0)
+            print(f"{portal}: no listings today; snapshot left untouched.")
+            return 0
         error = f"0 listings scraped from {portal}"
         _emit_result(portal, "failed", 0, error)
         print(f"Error: {error}. Check the URL or network.", file=sys.stderr)
