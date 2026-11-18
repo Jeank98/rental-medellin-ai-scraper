@@ -264,6 +264,14 @@ def scrape(
             with ThreadPoolExecutor(max_workers=PAGE_WORKERS) as pool:
                 fetched = pool.map(lambda p: _fetch_page(p, tipo_id, ciudad), remaining)
                 rest = dict(zip(remaining, fetched))
+            # A failed page must fail the portal, not truncate the snapshot.
+            for page_number in [p for p in remaining if rest.get(p) is None]:
+                rest[page_number] = _fetch_page(page_number, tipo_id, ciudad)
+            still_missing = [p for p in remaining if rest.get(p) is None]
+            if still_missing:
+                raise RuntimeError(
+                    f"Portada: page(s) {still_missing[:3]} of tipo {tipo_id} failed twice"
+                )
 
         for page in range(1, total_pages + 1):
             response = first_response if page == 1 else rest.get(page)

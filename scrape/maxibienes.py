@@ -190,6 +190,19 @@ def scrape(ciudad='medellin', sample_only=False, max_pages=None, verbose=False) 
     page_urls = [_page_url(page, ciudad) for page in range(2, total_pages + 1)]
     fetched = dict(bulk_fetch(page_urls)) if page_urls else {}
 
+    # A page that timed out under load must not truncate the snapshot: retry
+    # the missing ones one by one and fail loudly if any stays empty.
+    missing = [url for url in page_urls if not fetched.get(url)]
+    for url in missing:
+        retried = fetch_page(url)
+        if retried:
+            fetched[url] = retried
+    still_missing = [url for url in page_urls if not fetched.get(url)]
+    if still_missing:
+        raise RuntimeError(
+            f"Maxibienes: {len(still_missing)} page(s) failed after retry: {still_missing[:3]}"
+        )
+
     for page in range(2, total_pages + 1):
         html = fetched.get(_page_url(page, ciudad))
         if not html:

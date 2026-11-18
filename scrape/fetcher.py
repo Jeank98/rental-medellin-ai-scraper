@@ -22,7 +22,10 @@ _MAX_RETRIES = 3  # number of retry attempts (4 total with initial)
 _RETRY_DELAYS = [1, 2, 4]  # seconds between retries
 _TIMEOUT = 30  # seconds per request attempt
 _BULK_CHUNK_SIZE = 200
-_MAX_BULK_WORKERS = 20
+# Measured on the four heaviest portals with four running in parallel: 20
+# workers took 182 s and 8 took 108 s for the same inventory, because 80
+# concurrent requests saturate the VM's link and the portals start throttling.
+_MAX_BULK_WORKERS = 8
 
 # Scrapling's Fetcher methods are class methods in the current API. Keep the
 # class here so callers reuse its configured session without instantiation.
