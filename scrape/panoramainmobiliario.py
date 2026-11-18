@@ -492,6 +492,20 @@ def _phase_b(
             )
 
     if pending:
+        # Under concurrency a few detail pages fail inside the batch. Retry the
+        # stragglers one by one before failing the portal, so load does not
+        # turn into a false "detail enrichment failed".
+        retried: list[Listing] = []
+        for row in pending:
+            html = fetch_page(str(row["url"]))
+            detail = parse_detail_page(str(html or ""))
+            if not html or not (
+                _has_structured_detail(detail) and merge_detail(row, detail)
+            ):
+                retried.append(row)
+        pending = retried
+
+    if pending:
         # A card whose detail URL answers the portal's 404 page is a listing
         # the inmobiliaria already removed: publishing it would leave a dead
         # link in the sheet, so it is dropped instead of retried forever.

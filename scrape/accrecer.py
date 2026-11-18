@@ -177,6 +177,16 @@ def scrape(ciudad='medellin', sample_only=False, max_pages=None,
         # first-failure stop rule.
         page_urls = [f'{url_t}?page={p}' for p in range(2, total_pages + 1)]
         fetched = dict(bulk_fetch(page_urls)) if page_urls else {}
+        # Never truncate a snapshot because a page timed out under load.
+        for url in [u for u in page_urls if not fetched.get(u)]:
+            retried = fetch_page(url)
+            if retried:
+                fetched[url] = retried
+        missing_pages = [u for u in page_urls if not fetched.get(u)]
+        if missing_pages:
+            raise RuntimeError(
+                f"Accrecer: {len(missing_pages)} page(s) failed after retry: {missing_pages[:3]}"
+            )
 
         for page in range(1, total_pages + 1):
             if page > 1:
