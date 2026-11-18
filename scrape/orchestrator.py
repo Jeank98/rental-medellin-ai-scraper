@@ -227,7 +227,7 @@ def health_check(portals: dict, timeout: int = 300, verbose: bool = True) -> lis
                 "status": marker.get("status"), "elapsed": elapsed,
                 "attempts": result.attempts, "error": error_msg,
             }
-        if marker_error or marker.get("status") != "success":
+        if marker_error or marker.get("status") not in ("success", "empty"):
             error_msg = marker_error or marker.get("error") or "scraper reported failure"
             if verbose:
                 print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s) — {compact_console_text(error_msg, 60)}")
@@ -297,6 +297,9 @@ def parallel_scrape(
         ]
         if PORTALS[portal].get("reuse_unchanged_details"):
             command.append("--reuse-unchanged-details")
+        # A completed crawl with no inventory is reported as "empty" instead of
+        # aborting the run: only exceptions, HTTP errors and timeouts are breaks.
+        command.append("--allow-empty")
         result = run_with_retries(
             command,
             timeout=PORTAL_TIMEOUT_SECONDS,
@@ -322,7 +325,7 @@ def parallel_scrape(
                 "status": marker.get("status"), "elapsed": elapsed,
                 "attempts": result.attempts, "error": error_msg,
             }
-        if marker_error or marker.get("status") != "success":
+        if marker_error or marker.get("status") not in ("success", "empty"):
             error_msg = marker_error or marker.get("error") or "scraper reported failure"
             if verbose:
                 print(f"\r  ❌ {portal:30s} FAILED ({elapsed:.1f}s) — {compact_console_text(error_msg, 60)}")
@@ -332,7 +335,10 @@ def parallel_scrape(
                 "attempts": result.attempts, "error": error_msg,
             }
         if verbose:
-            print(f"\r  ✅ {portal:30s} {listings:>5d} listings ({_fmt_time(elapsed)})")
+            if marker.get("status") == "empty":
+                print(f"\r  ⚠️  {portal:30s} EMPTY — no inventory, snapshot kept ({_fmt_time(elapsed)})")
+            else:
+                print(f"\r  ✅ {portal:30s} {listings:>5d} listings ({_fmt_time(elapsed)})")
         return {
             "portal": portal, "success": True, "listings": listings,
             "status": "success", "elapsed": elapsed,
