@@ -5,10 +5,11 @@ are present in each response record, so no detail-page requests are needed.
 """
 
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import logging
 import math
 from collections.abc import Iterable
-from typing import Final, TypedDict
+from typing import Any, Final, TypedDict
 from urllib.parse import quote
 
 from scrape.fetcher import fetch_json
@@ -36,6 +37,7 @@ CITY_IDS: Final[dict[str, int]] = {
 }
 OPERATION_ID: Final = 1
 PAGE_SIZE: Final = 12
+PAGE_WORKERS: Final = 8
 MIN_RENT: Final = 500000
 MAX_RENT: Final = 50000000
 RESIDENTIAL_TYPES: Final[dict[str, int]] = {
@@ -255,12 +257,18 @@ def scrape(
         elif sample_only:
             total_pages = 1
 
+        # Pages 2+ are fetched in parallel; parsing keeps page order.
+        rest: dict[int, Any] = {}
+        if total_pages > 1:
+            remaining = list(range(2, total_pages + 1))
+            with ThreadPoolExecutor(max_workers=PAGE_WORKERS) as pool:
+                fetched = pool.map(lambda p: _fetch_page(p, tipo_id, ciudad), remaining)
+                rest = dict(zip(remaining, fetched))
+
         for page in range(1, total_pages + 1):
-            response = (
-                first_response
-                if page == 1
-                else _fetch_page(page, tipo_id, ciudad)
-            )
+            response = first_response if page == 1 else rest.get(page)
+            if response is None:
+                break
             page_listings = parse_search_response(response, expected_tipo)
             all_listings.extend(page_listings)
             if verbose:

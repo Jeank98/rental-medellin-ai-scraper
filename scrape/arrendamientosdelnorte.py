@@ -7,6 +7,7 @@ over three tipo params and extract fields from structured JSON.
 
 import re
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from scrape.fetcher import fetch_json
 from scrape.normalize import normalize_price, normalize_tipo
@@ -108,54 +109,65 @@ def scrape(ciudad="medellin", sample_only=False, max_pages=None, verbose=False) 
     until the API returns empty results. Post-filters casa results to
     exclude mixed tipos (Casa-Finca, Casa-local).
     """
+    # The three tipos are independent, so they run concurrently: each page
+    # costs ~10 s and doing them in series tripled the run.
+    with ThreadPoolExecutor(max_workers=len(_TIPOS)) as pool:
+        chunks = pool.map(
+            lambda tipo: _scrape_tipo(tipo, max_pages, sample_only, verbose), _TIPOS
+        )
+        return [listing for chunk in chunks for listing in chunk]
+
+
+def _scrape_tipo(tipo: str, max_pages, sample_only: bool, verbose: bool) -> list[dict]:
+    """Paginate one tipo until the API returns an empty page."""
     all_listings: list[dict] = []
     max_pages_tipo = max_pages
 
-    for tipo in _TIPOS:
-        page = 1
-        pages_fetched = 0
+    page = 1
+    pages_fetched = 0
+
+    if verbose:
+        logger.info("ADN: fetching tipo=%s", tipo)
+
+    while True:
+        url = (
+            f"{_API_BASE}?concepto=Arriendo"
+            f"&tipo={tipo}"
+            f"&page={page}"
+            f"&per_page={_PER_PAGE}"
+        )
 
         if verbose:
-            logger.info("ADN: fetching tipo=%s", tipo)
+            logger.info("ADN: %s page=%d", tipo, page)
 
-        while True:
-            url = (
-                f"{_API_BASE}?concepto=Arriendo"
-                f"&tipo={tipo}"
-                f"&page={page}"
-                f"&per_page={_PER_PAGE}"
-            )
+        data = fetch_json(url)
+        if not data or (isinstance(data, list) and len(data) == 0):
+            break
 
-            if verbose:
-                logger.info("ADN: %s page=%d", tipo, page)
+        items = data if isinstance(data, list) else data.get("data", [])
+        if not items:
+            break
 
-            data = fetch_json(url)
-            if not data or (isinstance(data, list) and len(data) == 0):
-                break
+        listings = [_build_item("arrendamientosdelnorte", item) for item in items]
 
-            items = data if isinstance(data, list) else data.get("data", [])
-            if not items:
-                break
+        # Post-filter: when tipo=casa, API returns mixed tipos — keep only casa
+        if tipo == "casa":
+            listings = [l for l in listings if l["tipo"] == "casa"]
 
-            listings = [_build_item("arrendamientosdelnorte", item) for item in items]
+        # Run each listing through validator
+        for listing in listings:
+            validate(listing)
 
-            # Post-filter: when tipo=casa, API returns mixed tipos — keep only casa
-            if tipo == "casa":
-                listings = [l for l in listings if l["tipo"] == "casa"]
+        all_listings.extend(listings)
 
-            # Run each listing through validator
-            for listing in listings:
-                validate(listing)
+        page += 1
+        pages_fetched += 1
 
-            all_listings.extend(listings)
+        if max_pages_tipo is not None and pages_fetched >= max_pages_tipo:
+            break
 
-            page += 1
-            pages_fetched += 1
-
-            if max_pages_tipo is not None and pages_fetched >= max_pages_tipo:
-                break
-
-            if sample_only and pages_fetched >= 3:
-                break
+        if sample_only and pages_fetched >= 3:
+            break
 
     return all_listings
+

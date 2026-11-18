@@ -10,7 +10,7 @@ import json
 import logging
 import math
 
-from scrape.fetcher import fetch_page
+from scrape.fetcher import bulk_fetch, fetch_page
 from scrape.normalize import normalize_estrato, normalize_tipo
 from scrape.validator import validate
 
@@ -173,9 +173,14 @@ def scrape(ciudad='medellin', sample_only=False, max_pages=None,
         if sample_only and max_pages is None:
             total_pages = 1
 
+        # Pages 2+ fetched in parallel; iterating in order keeps the
+        # first-failure stop rule.
+        page_urls = [f'{url_t}?page={p}' for p in range(2, total_pages + 1)]
+        fetched = dict(bulk_fetch(page_urls)) if page_urls else {}
+
         for page in range(1, total_pages + 1):
             if page > 1:
-                html = fetch_page(f'{url_t}?page={page}')
+                html = fetched.get(f'{url_t}?page={page}')
                 if not html:
                     logger.warning(
                         'Failed to fetch page %d for %s, stopping', page, tipo,
