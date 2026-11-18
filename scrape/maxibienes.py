@@ -7,7 +7,7 @@ extraction from server-rendered PHP pages with standard pagination.
 import logging
 import re
 from bs4 import BeautifulSoup
-from scrape.fetcher import fetch_page
+from scrape.fetcher import bulk_fetch, fetch_page
 from scrape.normalize import (
     normalize_price,
     normalize_tipo,
@@ -185,9 +185,13 @@ def scrape(ciudad='medellin', sample_only=False, max_pages=None, verbose=False) 
     if verbose:
         logger.info("Page 1: %d cards", cards_count)
 
-    # Pages 2+
+    # Pages 2+ — fetched in parallel; processing keeps page order so the
+    # "stop at the first empty page" rule still holds.
+    page_urls = [_page_url(page, ciudad) for page in range(2, total_pages + 1)]
+    fetched = dict(bulk_fetch(page_urls)) if page_urls else {}
+
     for page in range(2, total_pages + 1):
-        html = fetch_page(_page_url(page, ciudad))
+        html = fetched.get(_page_url(page, ciudad))
         if not html:
             logger.warning("Failed to fetch page %d, stopping", page)
             break

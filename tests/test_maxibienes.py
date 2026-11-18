@@ -31,6 +31,11 @@ def test_scrape_retains_all_paginated_listings(monkeypatch, city, total, pages):
         return _page(int(match.group(1)) if match else 1, total)
 
     monkeypatch.setattr(maxibienes, "fetch_page", fetch)
+    # Pages 2+ go through bulk_fetch now; keep the same fake for both paths.
+    monkeypatch.setattr(
+        maxibienes, "bulk_fetch",
+        lambda urls, max_workers=None: [(url, fetch(url)) for url in urls],
+    )
     rows = maxibienes.scrape(ciudad=city)
 
     assert [row["id"] for row in rows] == [f"MXB-{page}" for page in range(1, pages + 1)]
@@ -48,6 +53,11 @@ def test_scrape_preserves_page_limits(monkeypatch, options, pages):
         return _page(int(match.group(1)) if match else 1, 972)
 
     monkeypatch.setattr(maxibienes, "fetch_page", fetch)
+    # Pages 2+ go through bulk_fetch now; keep the same fake for both paths.
+    monkeypatch.setattr(
+        maxibienes, "bulk_fetch",
+        lambda urls, max_workers=None: [(url, fetch(url)) for url in urls],
+    )
     rows = maxibienes.scrape(**options)
 
     assert [row["id"] for row in rows] == [f"MXB-{page}" for page in range(1, pages + 1)]
