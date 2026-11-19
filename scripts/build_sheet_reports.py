@@ -212,7 +212,9 @@ def apply_number_formats(service, spreadsheet_id: str, resumen_id: int, barrios_
     ).execute()
 
 
-def build_charts(service, spreadsheet_id: str, resumen_id: int, barrios_id: int) -> None:
+def build_charts(
+    service, spreadsheet_id: str, resumen_id: int, barrios_id: int, barrios_rows: int
+) -> None:
     """Two bar charts: median rent by city and median $/m² for the top barrios."""
     meta = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
     stale = [
@@ -241,8 +243,9 @@ def build_charts(service, spreadsheet_id: str, resumen_id: int, barrios_id: int)
                         "startColumnIndex": 3, "endColumnIndex": 4}]}}}],
                 },
             },
-            "position": {"overlayPosition": {"anchorCell": {
-                "sheetId": resumen_id, "rowIndex": 9, "columnIndex": 0}}},
+            "position": {"overlayPosition": {
+                "anchorCell": {"sheetId": resumen_id, "rowIndex": 12, "columnIndex": 0},
+                "widthPixels": 640, "heightPixels": 380}},
         }}},
         {"addChart": {"chart": {
             "spec": {
@@ -258,8 +261,10 @@ def build_charts(service, spreadsheet_id: str, resumen_id: int, barrios_id: int)
                         "startColumnIndex": 5, "endColumnIndex": 6}]}}}],
                 },
             },
-            "position": {"overlayPosition": {"anchorCell": {
-                "sheetId": barrios_id, "rowIndex": 9, "columnIndex": 8}}},
+            "position": {"overlayPosition": {
+                "anchorCell": {"sheetId": barrios_id,
+                               "rowIndex": barrios_rows + 3, "columnIndex": 0},
+                "widthPixels": 640, "heightPixels": 380}},
         }}},
     ]
     service.spreadsheets().batchUpdate(
@@ -284,7 +289,7 @@ def main() -> int:
     build_barrios(service, spreadsheet_id, barrios)
     apply_number_formats(service, spreadsheet_id, resumen_id, barrios_id)
     if not args.no_charts:
-        build_charts(service, spreadsheet_id, resumen_id, barrios_id)
+        build_charts(service, spreadsheet_id, resumen_id, barrios_id, len(barrios) + 2)
 
     print(f"Resumen y Barrios actualizados · {len(barrios)} barrios con ≥{MIN_LISTINGS} avisos")
     return 0
