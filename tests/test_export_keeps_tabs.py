@@ -21,8 +21,9 @@ def test_reports_script_exists_and_targets_the_data_tab() -> None:
     source = REPORTS.read_text(encoding="utf-8")
 
     assert 'DATA_TAB' in source
-    for tab in ("Resumen", "Barrios", "Mi búsqueda"):
+    for tab in ("Resumen", "Barrios"):
         assert tab in source
+    assert "Mi búsqueda" not in source
 
 
 def test_reports_formulas_use_the_spreadsheet_locale_separator() -> None:

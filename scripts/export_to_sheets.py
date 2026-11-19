@@ -21,6 +21,8 @@ First run opens a browser for OAuth consent; tokens are saved to
 """
 
 import argparse
+import re
+import unicodedata
 import os
 import sys
 from datetime import datetime
@@ -72,6 +74,7 @@ HEADERS = [
     "ciudad",
     "status",
     "scraped_at",
+    "barrio_norm",
 ]
 
 COLUMN_WIDTHS = {
@@ -141,6 +144,30 @@ def _service_account_credentials():
         )
 
     return None
+
+
+_ARTICLES = ("el ", "la ", "los ", "las ", "barrio ")
+
+
+def normalize_barrio_key(name: str) -> str:
+    """Fold a neighbourhood name so the same place groups together.
+
+    Portals spell the same barrio differently ("El Poblado", "POBLADO",
+    "Barrio Poblado"), so accents, case, punctuation and leading articles are
+    dropped and the result is used as the grouping key.
+    """
+    folded = unicodedata.normalize("NFKD", str(name or ""))
+    folded = "".join(c for c in folded if not unicodedata.combining(c))
+    folded = re.sub(r"[^a-z0-9 ]+", " ", folded.casefold())
+    folded = " ".join(folded.split())
+    changed = True
+    while changed:
+        changed = False
+        for article in _ARTICLES:
+            if folded.startswith(article) and len(folded) > len(article):
+                folded = folded[len(article):]
+                changed = True
+    return folded
 
 
 def get_credentials():
@@ -288,6 +315,7 @@ def rows_to_values(rows):
             row.get("ciudad", ""),
             row.get("status", ""),
             str(row.get("scraped_at", "")),
+            normalize_barrio_key(row.get("barrio") or ""),
         ])
     return values
 
