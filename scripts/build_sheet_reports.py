@@ -150,13 +150,14 @@ def build_barrios(service, spreadsheet_id: str, barrios: list[dict]) -> None:
             item["barrio"],
             f'=COUNTIFS({DATA_TAB}!$L$2:$L;$A{row_number};{DATA_TAB}!$O$2:$O;$J{row_number})',
             f'=ARRAYFORMULA(IF($C{row_number}="";"";IFERROR(MEDIAN(IF({keys};{DATA_TAB}!$D$2:$D));"")))',
-            f'=ARRAYFORMULA(IF($C{row_number}="";"";IFERROR(MEDIAN(IF({keys};{DATA_TAB}!$E$2:$E));"")))',
+            f'=ARRAYFORMULA(IF($C{row_number}="";"";IFERROR(MEDIAN(IF({keys}*({DATA_TAB}!$E$2:$E>0);'
+            f'{DATA_TAB}!$E$2:$E));"")))',
             f'=ARRAYFORMULA(IF($C{row_number}="";"";IFERROR(MEDIAN(IF({keys}*({DATA_TAB}!$E$2:$E>0);'
             f'{DATA_TAB}!$D$2:$D/{DATA_TAB}!$E$2:$E));"")))',
             f'=ARRAYFORMULA(IF($C{row_number}="";"";IFERROR(MEDIAN(IF({keys}*({DATA_TAB}!$I$2:$I>0);'
             f'{DATA_TAB}!$I$2:$I));"")))',
             f'=IF($G{row_number}="";"";IF($G{row_number}>=4;"sí";"no"))',
-            f'=IFERROR(COUNTIFS({DATA_TAB}!$L$2:$L;$A{row_number};{DATA_TAB}!$O$2:$O;$B{row_number};'
+            f'=IFERROR(COUNTIFS({DATA_TAB}!$L$2:$L;$A{row_number};{DATA_TAB}!$O$2:$O;$J{row_number};'
             f'{DATA_TAB}!$H$2:$H;">0")/$C{row_number};"")',
             item["key"],
         ])
@@ -254,10 +255,12 @@ def build_charts(
                     "chartType": "BAR",
                     "legendPosition": "NO_LEGEND",
                     "domains": [{"domain": {"sourceRange": {"sources": [{
-                        "sheetId": barrios_id, "startRowIndex": 1, "endRowIndex": 6,
-                        "startColumnIndex": 0, "endColumnIndex": 1}]}}}],
+                        "sheetId": barrios_id, "startRowIndex": 1,
+                        "endRowIndex": min(11, barrios_rows),
+                        "startColumnIndex": 1, "endColumnIndex": 2}]}}}],
                     "series": [{"series": {"sourceRange": {"sources": [{
-                        "sheetId": barrios_id, "startRowIndex": 1, "endRowIndex": 6,
+                        "sheetId": barrios_id, "startRowIndex": 1,
+                        "endRowIndex": min(11, barrios_rows),
                         "startColumnIndex": 5, "endColumnIndex": 6}]}}}],
                 },
             },
