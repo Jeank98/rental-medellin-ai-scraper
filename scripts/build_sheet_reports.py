@@ -173,43 +173,40 @@ def build_barrios(service, spreadsheet_id: str, barrios: list[dict]) -> None:
 
 
 def apply_number_formats(service, spreadsheet_id: str, resumen_id: int, barrios_id: int) -> None:
+    """Explicit per-column formats: cell formats survive a value rewrite."""
     money = {"type": "NUMBER", "pattern": '"$"#,##0'}
-    per_m2 = {"type": "NUMBER", "pattern": '"$"#,##0'}
+    integer = {"type": "NUMBER", "pattern": "0"}
     percent = {"type": "PERCENT", "pattern": "0%"}
-    requests = [
-        {"repeatCell": {
-            "range": {"sheetId": resumen_id, "startRowIndex": 1, "endRowIndex": 7,
-                      "startColumnIndex": 2, "endColumnIndex": 5},
-            "cell": {"userEnteredFormat": {"numberFormat": money}}, "fields": "userEnteredFormat.numberFormat"}},
-        {"repeatCell": {
-            "range": {"sheetId": resumen_id, "startRowIndex": 1, "endRowIndex": 7,
-                      "startColumnIndex": 6, "endColumnIndex": 7},
-            "cell": {"userEnteredFormat": {"numberFormat": per_m2}}, "fields": "userEnteredFormat.numberFormat"}},
-        {"repeatCell": {
-            "range": {"sheetId": resumen_id, "startRowIndex": 1, "endRowIndex": 7,
-                      "startColumnIndex": 7, "endColumnIndex": 8},
-            "cell": {"userEnteredFormat": {"numberFormat": percent}}, "fields": "userEnteredFormat.numberFormat"}},
-        {"repeatCell": {
-            "range": {"sheetId": barrios_id, "startRowIndex": 1, "endRowIndex": 300,
-                      "startColumnIndex": 3, "endColumnIndex": 5},
-            "cell": {"userEnteredFormat": {"numberFormat": money}}, "fields": "userEnteredFormat.numberFormat"}},
-        {"repeatCell": {
-            "range": {"sheetId": barrios_id, "startRowIndex": 1, "endRowIndex": 300,
-                      "startColumnIndex": 5, "endColumnIndex": 6},
-            "cell": {"userEnteredFormat": {"numberFormat": per_m2}}, "fields": "userEnteredFormat.numberFormat"}},
-        {"repeatCell": {
-            "range": {"sheetId": barrios_id, "startRowIndex": 1, "endRowIndex": 300,
-                      "startColumnIndex": 8, "endColumnIndex": 9},
-            "cell": {"userEnteredFormat": {"numberFormat": percent}}, "fields": "userEnteredFormat.numberFormat"}},
-    ]
-    # The grouping key is a helper, not something to read.
-    requests.append({"updateDimensionProperties": {
-        "range": {"sheetId": barrios_id, "dimension": "COLUMNS",
-                  "startIndex": 9, "endIndex": 10},
-        "properties": {"hiddenByUser": True},
-        "fields": "hiddenByUser",
-    }})
 
+    def rule(sheet_id: int, column: int, number_format: dict) -> dict:
+        return {"repeatCell": {
+            "range": {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": 300,
+                      "startColumnIndex": column, "endColumnIndex": column + 1},
+            "cell": {"userEnteredFormat": {"numberFormat": number_format}},
+            "fields": "userEnteredFormat.numberFormat"}}
+
+    requests = [
+        # Resumen: ciudad | avisos | P25 | mediana | P75 | m² | $/m² | % parqueadero
+        rule(resumen_id, 1, integer),
+        rule(resumen_id, 2, money),
+        rule(resumen_id, 3, money),
+        rule(resumen_id, 4, money),
+        rule(resumen_id, 5, integer),
+        rule(resumen_id, 6, money),
+        rule(resumen_id, 7, percent),
+        # Barrios: ciudad | barrio | avisos | precio | m² | $/m² | estrato | atractivo | % parqueadero
+        rule(barrios_id, 2, integer),
+        rule(barrios_id, 3, money),
+        rule(barrios_id, 4, integer),
+        rule(barrios_id, 5, money),
+        rule(barrios_id, 6, integer),
+        rule(barrios_id, 8, percent),
+        {"updateDimensionProperties": {
+            "range": {"sheetId": barrios_id, "dimension": "COLUMNS",
+                      "startIndex": 9, "endIndex": 10},
+            "properties": {"hiddenByUser": True},
+            "fields": "hiddenByUser"}},
+    ]
     service.spreadsheets().batchUpdate(
         spreadsheetId=spreadsheet_id, body={"requests": requests}
     ).execute()
