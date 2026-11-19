@@ -21,6 +21,8 @@ First run opens a browser for OAuth consent; tokens are saved to
 """
 
 import argparse
+import re
+import unicodedata
 import os
 import sys
 from datetime import datetime
@@ -55,6 +57,8 @@ ALLOWED_TIPOS = {
 # Minimum price in COP — anything below is likely an error or placeholder
 MIN_PRICE = 200_000
 
+DATA_TAB = "Inmuebles"
+
 HEADERS = [
     "id",
     "portal",
@@ -70,6 +74,7 @@ HEADERS = [
     "ciudad",
     "status",
     "scraped_at",
+    "barrio_norm",
 ]
 
 COLUMN_WIDTHS = {
@@ -139,6 +144,30 @@ def _service_account_credentials():
         )
 
     return None
+
+
+_ARTICLES = ("el ", "la ", "los ", "las ", "barrio ")
+
+
+def normalize_barrio_key(name: str) -> str:
+    """Fold a neighbourhood name so the same place groups together.
+
+    Portals spell the same barrio differently ("El Poblado", "POBLADO",
+    "Barrio Poblado"), so accents, case, punctuation and leading articles are
+    dropped and the result is used as the grouping key.
+    """
+    folded = unicodedata.normalize("NFKD", str(name or ""))
+    folded = "".join(c for c in folded if not unicodedata.combining(c))
+    folded = re.sub(r"[^a-z0-9 ]+", " ", folded.casefold())
+    folded = " ".join(folded.split())
+    changed = True
+    while changed:
+        changed = False
+        for article in _ARTICLES:
+            if folded.startswith(article) and len(folded) > len(article):
+                folded = folded[len(article):]
+                changed = True
+    return folded
 
 
 def get_credentials():
@@ -286,6 +315,7 @@ def rows_to_values(rows):
             row.get("ciudad", ""),
             row.get("status", ""),
             str(row.get("scraped_at", "")),
+            normalize_barrio_key(row.get("barrio") or ""),
         ])
     return values
 
@@ -358,9 +388,9 @@ def apply_formatting(service, spreadsheet_id, sheet_id):
 
 
 def update_existing_sheet(service, sheet_id, rows, title=None):
-    """Clear an existing sheet and repopulate with fresh data.
+    """Clear the first sheet and repopulate it with fresh data.
 
-    Deletes extra sheets beyond the first to keep the spreadsheet clean.
+    Other tabs are left untouched: they hold the analysis views.
     """
     from googleapiclient.errors import HttpError
 
@@ -381,6 +411,21 @@ def update_existing_sheet(service, sheet_id, rows, title=None):
     sheets = spreadsheet.get("sheets", [])
     first_sheet = sheets[0]
     first_sheet_name = first_sheet["properties"]["title"]
+    if first_sheet_name in ("Hoja 1", "Sheet1"):
+        try:
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=sheet_id,
+                body={"requests": [{
+                    "updateSheetProperties": {
+                        "properties": {"sheetId": first_sheet["properties"]["sheetId"],
+                                       "title": DATA_TAB},
+                        "fields": "title",
+                    }
+                }]},
+            ).execute()
+            first_sheet_name = DATA_TAB
+        except HttpError as e:
+            print(f"WARNING: Could not rename the data tab: {e}")
 
     # Rename spreadsheet if title is provided
     if title:
@@ -431,24 +476,8 @@ def update_existing_sheet(service, sheet_id, rows, title=None):
     # Re-apply formatting to the first sheet (sheetId 0)
     apply_formatting(service, sheet_id, 0)
 
-    # Delete extra sheets beyond the first
-    extra_sheets = sheets[1:]
-    if extra_sheets:
-        delete_requests = []
-        for sheet in extra_sheets:
-            delete_requests.append({
-                "deleteSheet": {
-                    "sheetId": sheet["properties"]["sheetId"],
-                }
-            })
-
-        try:
-            service.spreadsheets().batchUpdate(
-                spreadsheetId=sheet_id,
-                body={"requests": delete_requests},
-            ).execute()
-        except HttpError as e:
-            print(f"WARNING: Failed to delete extra sheets: {e}")
+    # Analysis tabs (Resumen, Barrios, Mi búsqueda) live alongside the data and
+    # must survive every refresh, so nothing is deleted here.
 
     return f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit"
 
